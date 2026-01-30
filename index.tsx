@@ -50,13 +50,22 @@ import {
   CheckSquare,
   Square,
   ArrowUpRight,
-  Menu
+  Menu,
+  Pencil,
+  FileText,
+  AlignLeft
 } from "lucide-react";
 
 // Import character data and type
 import { Character, MOCK_CHARACTERS, MaturityLevel } from "./characters";
 
 // --- Types & Interfaces ---
+
+interface UserProfile {
+  name: string;
+  handle: string;
+  avatarInitial: string;
+}
 
 interface Persona {
   id: string;
@@ -87,9 +96,6 @@ interface ChatSession {
   lastActive: number;
   suggestions?: string[];
 }
-
-// --- Constants ---
-const CURRENT_USER_HANDLE = '@you';
 
 // --- Utilities ---
 
@@ -193,6 +199,10 @@ const App = () => {
     const saved = localStorage.getItem('pf_characters');
     return saved ? JSON.parse(saved) : MOCK_CHARACTERS;
   });
+  const [userProfile, setUserProfile] = useState<UserProfile>(() => {
+    const saved = localStorage.getItem('pf_user_profile');
+    return saved ? JSON.parse(saved) : { name: "Genesis User", handle: "@you", avatarInitial: "U" };
+  });
   const [personas, setPersonas] = useState<Persona[]>(() => {
     const saved = localStorage.getItem('pf_personas');
     return saved ? JSON.parse(saved) : DEFAULT_PERSONAS;
@@ -209,6 +219,7 @@ const App = () => {
   useEffect(() => { localStorage.setItem('pf_characters', JSON.stringify(characters)); }, [characters]);
   useEffect(() => { localStorage.setItem('pf_personas', JSON.stringify(personas)); }, [personas]);
   useEffect(() => { localStorage.setItem('pf_chats', JSON.stringify(chats)); }, [chats]);
+  useEffect(() => { localStorage.setItem('pf_user_profile', JSON.stringify(userProfile)); }, [userProfile]);
   useEffect(() => { if (appToast) { const timer = setTimeout(() => setAppToast(null), 2500); return () => clearTimeout(timer); } }, [appToast]);
   
   const startChat = (charId: string) => {
@@ -246,6 +257,8 @@ const App = () => {
             session={session} 
             character={character} 
             personas={personas}
+            userProfile={userProfile}
+            setAppToast={setAppToast}
             activePersonaId={activePersonaId}
             setActivePersonaId={(id: string) => {
                setActivePersonaId(id);
@@ -270,9 +283,9 @@ const App = () => {
       case "featured": return <FeaturedView characters={characters} onStartChat={startChat} />;
       case "explore": return <ExploreView characters={characters} onStartChat={startChat} />;
       case "chat": return <ChatListView chats={chats} characters={characters} onOpenChat={setActiveChatId} />;
-      case "create": return <CreateView initialMode={createViewMode} onCreateCharacter={(c: any) => { setCharacters([c, ...characters]); setActiveTab("library"); }} onCreatePersona={(p: any) => { setPersonas([p, ...personas]); setActiveTab("profile"); }} onBack={() => setActiveTab('for_you')} />;
-      case "library": return <LibraryView chats={chats} characters={characters} personas={personas} />;
-      case "profile": return <ProfileView personas={personas} activePersonaId={activePersonaId} setActivePersonaId={(id: string) => { setActivePersonaId(id); const p = personas.find(pers => pers.id === id); if (p) setAppToast(`Manifested: ${p.name}`); }} chats={chats} updatePersona={(p: any) => setPersonas(prev => prev.map(o => o.id === p.id ? p : o))} />;
+      case "create": return <CreateView initialMode={createViewMode} userProfile={userProfile} onCreateCharacter={(c: any) => { setCharacters([c, ...characters]); setActiveTab("library"); }} onCreatePersona={(p: any) => { setPersonas([p, ...personas]); setActiveTab("profile"); }} onBack={() => setActiveTab('for_you')} />;
+      case "library": return <LibraryView chats={chats} characters={characters} personas={personas} userProfile={userProfile} />;
+      case "profile": return <ProfileView personas={personas} activePersonaId={activePersonaId} setActivePersonaId={(id: string) => { setActivePersonaId(id); const p = personas.find(pers => pers.id === id); if (p) setAppToast(`Manifested: ${p.name}`); }} chats={chats} updatePersona={(p: any) => setPersonas(prev => prev.map(o => o.id === p.id ? p : o))} userProfile={userProfile} setUserProfile={setUserProfile} />;
       case "settings": return <SettingsView />;
       default: return <ForYouView characters={characters} onStartChat={startChat} />;
     }
@@ -334,7 +347,7 @@ const ForYouView = ({ characters, onStartChat }: any) => (
     </header>
     <section>
       <h2 className="text-xs font-black text-primary uppercase tracking-[0.2em] mb-4 px-1 flex items-center gap-2"><Zap size={14} className="fill-primary" /> Pick of the day</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-5">{characters.slice(0, 2).map((c: any) => <CharacterCard key={c.id} character={c} onStartChat={onStartChat} />)}</div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">{characters.slice(0, 2).map((c: any) => <CharacterCard key={c.id} character={c} onStartChat={onStartChat} />)}</div>
     </section>
     <section>
       <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] mb-4 px-1">Recent Additions</h2>
@@ -401,7 +414,7 @@ const ChatListView = ({ chats, characters, onOpenChat }: any) => {
 };
 
 // --- REUSABLE CHARACTER EDITOR COMPONENT ---
-const CharacterEditor = ({ initialData, onSave, onCancel, mode }: { initialData: Partial<Character>, onSave: (data: Partial<Character>) => void, onCancel: () => void, mode: "create" | "edit" }) => {
+const CharacterEditor = ({ initialData, onSave, onCancel, mode, userProfile }: { initialData: Partial<Character>, onSave: (data: Partial<Character>) => void, onCancel: () => void, mode: "create" | "edit", userProfile: UserProfile }) => {
   const [name, setName] = useState(initialData.name || "");
   const [tagline, setTagline] = useState(initialData.tagline || "");
   const [subtitle, setSubtitle] = useState(initialData.subtitle || "");
@@ -414,7 +427,7 @@ const CharacterEditor = ({ initialData, onSave, onCancel, mode }: { initialData:
   const [isAILoading, setIsAILoading] = useState(false);
 
   // Check ownership
-  const isEditable = mode === "create" || initialData.creator === CURRENT_USER_HANDLE;
+  const isEditable = mode === "create" || initialData.creator === userProfile.handle;
 
   // Constants for field lengths
   const MAX_NAME = 20;
@@ -462,7 +475,7 @@ const CharacterEditor = ({ initialData, onSave, onCancel, mode }: { initialData:
                 id: 'preview',
                 name: name || 'Identity Name',
                 tagline: tagline || 'Awaiting definition...',
-                creator: initialData.creator || CURRENT_USER_HANDLE,
+                creator: initialData.creator || userProfile.handle,
                 engagement: initialData.engagement || '0',
                 initial: (name?.[0] || 'N').toUpperCase(),
                 color: initialData.color || 'bg-indigo-600',
@@ -671,7 +684,7 @@ const CharacterEditor = ({ initialData, onSave, onCancel, mode }: { initialData:
   );
 };
 
-const CreateView = ({ onCreateCharacter, onCreatePersona, onBack, initialMode }: any) => {
+const CreateView = ({ onCreateCharacter, onCreatePersona, onBack, initialMode, userProfile }: any) => {
   const [mode, setMode] = useState<"character" | "persona">(initialMode || "character");
   const [personaName, setPersonaName] = useState("");
   const [personaBio, setPersonaBio] = useState("");
@@ -681,14 +694,15 @@ const CreateView = ({ onCreateCharacter, onCreatePersona, onBack, initialMode }:
     return (
       <CharacterEditor 
         mode="create"
-        initialData={{ color: 'bg-indigo-600', initial: 'N', creator: CURRENT_USER_HANDLE, engagement: '0', tags: ['Custom'], maturityLevel: 'teen', visibility: 'public' }}
+        userProfile={userProfile}
+        initialData={{ color: 'bg-indigo-600', initial: 'N', creator: userProfile.handle, engagement: '0', tags: ['Custom'], maturityLevel: 'teen', visibility: 'public' }}
         onCancel={onBack}
         onSave={(data) => {
           onCreateCharacter({ 
             id: `char_${Date.now()}`, 
             initial: data.name![0].toUpperCase(),
             color: 'bg-indigo-600',
-            creator: CURRENT_USER_HANDLE,
+            creator: userProfile.handle,
             engagement: '0',
             tags: ['Custom'],
             ...data 
@@ -726,7 +740,7 @@ const CreateView = ({ onCreateCharacter, onCreatePersona, onBack, initialMode }:
   );
 };
 
-const LibraryView = ({ characters, personas }: any) => (
+const LibraryView = ({ characters, personas, userProfile }: any) => (
   <div className="max-w-6xl mx-auto p-4 pb-24">
     <h1 className="text-3xl font-black mb-8 uppercase tracking-tighter text-white">Archive</h1>
     <section className="mb-10">
@@ -735,20 +749,59 @@ const LibraryView = ({ characters, personas }: any) => (
     </section>
     <section>
       <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4">Pinned Entities</h2>
-      <div className="space-y-3">{characters.filter((c: any) => c.creator === CURRENT_USER_HANDLE).map((c: any) => <div key={c.id} className="flex items-center gap-4 p-4 bg-[#1a1a1a]/30 rounded-3xl border border-white/5"><AbstractAvatar name={c.name} colorClass={c.color} size="sm" initial={c.initial} /><div className="flex-1"><div className="font-black text-sm text-white">{c.name}</div><div className="text-[9px] text-slate-500 font-bold uppercase italic tracking-widest">Self Build</div></div></div>)}</div>
+      <div className="space-y-3">{characters.filter((c: any) => c.creator === userProfile.handle).map((c: any) => <div key={c.id} className="flex items-center gap-4 p-4 bg-[#1a1a1a]/30 rounded-3xl border border-white/5"><AbstractAvatar name={c.name} colorClass={c.color} size="sm" initial={c.initial} /><div className="flex-1"><div className="font-black text-sm text-white">{c.name}</div><div className="text-[9px] text-slate-500 font-bold uppercase italic tracking-widest">Self Build</div></div></div>)}</div>
     </section>
   </div>
 );
 
-const ProfileView = ({ personas, activePersonaId, setActivePersonaId, chats, updatePersona }: any) => {
-  const [editing, setEditing] = useState<any>(null);
+const ProfileView = ({ personas, activePersonaId, setActivePersonaId, chats, updatePersona, userProfile, setUserProfile }: any) => {
+  const [editingPersona, setEditingPersona] = useState<any>(null);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [tempName, setTempName] = useState(userProfile.name);
+  const [tempHandle, setTempHandle] = useState(userProfile.handle);
+
   const totalMsgs = chats ? chats.reduce((acc: number, c: any) => acc + c.messages.filter((m: any) => m.role === 'user').length, 0) : 0;
   
+  const saveProfile = () => {
+    vibrate();
+    setUserProfile({ 
+      ...userProfile, 
+      name: tempName, 
+      handle: tempHandle.startsWith('@') ? tempHandle : `@${tempHandle}`,
+      avatarInitial: tempName[0]?.toUpperCase() || "U"
+    });
+    setIsEditingProfile(false);
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-4 pb-24 relative">
-      <div className="flex items-center gap-6 mb-10 pt-4 px-2">
-        <div className="w-24 h-24 bg-gradient-to-br from-primary via-indigo-600 to-purple-700 rounded-[2rem] flex items-center justify-center text-4xl font-black shadow-[0_20px_50px_rgba(59,130,246,0.2)] rotate-2 ring-1 ring-white/10 text-white">U</div>
-        <div><h1 className="text-3xl font-black text-white leading-tight uppercase tracking-tighter">Genesis User</h1><div className="inline-block bg-primary/20 text-primary border border-primary/40 px-2.5 py-0.5 rounded-full font-black text-[9px] uppercase tracking-[0.2em] mt-1 shadow-[0_0_15px_rgba(59,130,246,0.15)]">Lvl. 01 Weaver</div></div>
+      <div className="flex items-center gap-6 mb-10 pt-4 px-2 group">
+        <div className="relative">
+          <div className="w-24 h-24 bg-gradient-to-br from-primary via-indigo-600 to-purple-700 rounded-[2rem] flex items-center justify-center text-4xl font-black shadow-[0_20px_50px_rgba(59,130,246,0.2)] rotate-2 ring-1 ring-white/10 text-white">
+            {userProfile.avatarInitial}
+          </div>
+          <button 
+            onClick={() => { setIsEditingProfile(true); setTempName(userProfile.name); setTempHandle(userProfile.handle); }}
+            className="absolute -bottom-1 -right-1 p-2 bg-primary text-white rounded-xl shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <Pencil size={14} />
+          </button>
+        </div>
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-black text-white leading-tight uppercase tracking-tighter cursor-pointer hover:text-primary transition-colors" onClick={() => { setIsEditingProfile(true); setTempName(userProfile.name); setTempHandle(userProfile.handle); }}>{userProfile.name}</h1>
+            <button 
+              onClick={() => { setIsEditingProfile(true); setTempName(userProfile.name); setTempHandle(userProfile.handle); }}
+              className="p-2 text-slate-500 hover:text-white transition-colors"
+            >
+              <Edit3 size={18} />
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">{userProfile.handle}</span>
+            <div className="inline-block bg-primary/20 text-primary border border-primary/40 px-2.5 py-0.5 rounded-full font-black text-[9px] uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(59,130,246,0.15)]">Lvl. 01 Weaver</div>
+          </div>
+        </div>
       </div>
 
       <div className="mb-10">
@@ -773,7 +826,7 @@ const ProfileView = ({ personas, activePersonaId, setActivePersonaId, chats, upd
                </div>
                <div className="flex items-center gap-3">
                  {activePersonaId === p.id && <div className="p-1.5 bg-white/20 rounded-full shadow-inner"><Check size={16} /></div>}
-                 <button onClick={(e) => { e.stopPropagation(); setEditing(p); vibrate(); }} className={`p-2 rounded-xl transition-all ${activePersonaId === p.id ? 'bg-white/10 hover:bg-white/20' : 'bg-white/5 hover:bg-white/10'}`}><Edit3 size={16} /></button>
+                 <button onClick={(e) => { e.stopPropagation(); setEditingPersona(p); vibrate(); }} className={`p-2 rounded-xl transition-all ${activePersonaId === p.id ? 'bg-white/10 hover:bg-white/20' : 'bg-white/5 hover:bg-white/10'}`}><Edit3 size={16} /></button>
                </div>
             </div>
           ))}
@@ -785,15 +838,53 @@ const ProfileView = ({ personas, activePersonaId, setActivePersonaId, chats, upd
         <div className="p-8 bg-[#1a1a1a]/30 rounded-[3rem] border border-white/5 text-center flex flex-col items-center justify-center"><div className="text-3xl font-black text-white mb-1">∞</div><div className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Memory Nodes</div></div>
       </div>
 
-      {editing && (
+      {/* Edit Identity Modal */}
+      {isEditingProfile && (
+        <div className="fixed inset-0 z-[120] bg-black/95 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[#1a1a1a] w-full max-w-md rounded-[3rem] border border-white/10 shadow-2xl flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center p-8 border-b border-white/5 flex-none">
+              <h2 className="text-xl font-black uppercase tracking-tighter text-white">Edit Weaver</h2>
+              <button onClick={() => setIsEditingProfile(false)} className="text-slate-500 p-2"><X size={28} /></button>
+            </div>
+            <div className="p-8 space-y-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] px-1">Display Name</label>
+                <input 
+                  value={tempName} 
+                  onChange={e => setTempName(e.target.value)} 
+                  className="w-full bg-[#121212] border border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:border-primary/50 transition-all" 
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] px-1">Handle</label>
+                <input 
+                  value={tempHandle} 
+                  onChange={e => setTempHandle(e.target.value)} 
+                  placeholder="@handle"
+                  className="w-full bg-[#121212] border border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:border-primary/50 transition-all" 
+                />
+                <p className="text-[9px] text-slate-600 font-medium px-1 uppercase tracking-widest">Handle determines character ownership nodes.</p>
+              </div>
+              <button 
+                onClick={saveProfile}
+                className="w-full bg-primary text-white font-black py-5 rounded-3xl shadow-xl shadow-primary/20 uppercase tracking-widest text-xs mt-4 active:scale-95 transition-all"
+              >
+                Sync Identity
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingPersona && (
         <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-[#1a1a1a] w-full max-w-md rounded-[3rem] border border-white/10 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="flex justify-between items-center p-8 border-b border-white/5 flex-none"><h2 className="text-xl font-black uppercase tracking-tighter text-white">Morph Identity</h2><button onClick={() => setEditing(null)} className="text-slate-500 p-2"><X size={28} /></button></div>
+            <div className="flex justify-between items-center p-8 border-b border-white/5 flex-none"><h2 className="text-xl font-black uppercase tracking-tighter text-white">Morph Identity</h2><button onClick={() => setEditingPersona(null)} className="text-slate-500 p-2"><X size={28} /></button></div>
             <div className="flex-1 overflow-y-auto p-8 space-y-6 no-scrollbar">
-              <div className="space-y-2"><label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Name</label><input value={editing.name} onChange={e => setEditing({...editing, name: e.target.value})} className="w-full bg-[#121212] border border-white/5 rounded-2xl p-4 text-white font-bold" /></div>
-              <div className="space-y-2"><label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Biography</label><textarea value={editing.bio} onChange={e => setEditing({...editing, bio: e.target.value})} className="w-full bg-[#121212] border border-white/5 rounded-2xl p-4 text-white font-medium h-32 leading-relaxed" /></div>
+              <div className="space-y-2"><label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Name</label><input value={editingPersona.name} onChange={e => setEditingPersona({...editingPersona, name: e.target.value})} className="w-full bg-[#121212] border border-white/5 rounded-2xl p-4 text-white font-bold" /></div>
+              <div className="space-y-2"><label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Biography</label><textarea value={editingPersona.bio} onChange={e => setEditingPersona({...editingPersona, bio: e.target.value})} className="w-full bg-[#121212] border border-white/5 rounded-2xl p-4 text-white font-medium h-32 leading-relaxed" /></div>
             </div>
-            <div className="p-8 border-t border-white/5 bg-[#1a1a1a]/50"><button onClick={() => { updatePersona(editing); setEditing(null); vibrate(); }} className="w-full bg-primary text-white font-black py-5 rounded-3xl shadow-xl shadow-primary/20 uppercase tracking-widest text-xs">Commit Manifestation</button></div>
+            <div className="p-8 border-t border-white/5 bg-[#1a1a1a]/50"><button onClick={() => { updatePersona(editingPersona); setEditingPersona(null); vibrate(); }} className="w-full bg-primary text-white font-black py-5 rounded-3xl shadow-xl shadow-primary/20 uppercase tracking-widest text-xs">Commit Manifestation</button></div>
           </div>
         </div>
       )}
@@ -813,7 +904,7 @@ const SettingsView = () => (
 
 // --- CHAT INTERFACE & LOGIC ---
 
-const ChatInterface = ({ session, character, personas, activePersonaId, setActivePersonaId, onBack, onUpdateSession, onUpdateCharacter, onDeleteChat, onCreatePersona }: any) => {
+const ChatInterface = ({ session, character, personas, activePersonaId, setActivePersonaId, onBack, onUpdateSession, onUpdateCharacter, onDeleteChat, onCreatePersona, userProfile, setAppToast }: any) => {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -824,12 +915,14 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
   const [pendingPersona, setPendingPersona] = useState<Persona | null>(null);
   const [isViewingSettings, setIsViewingSettings] = useState(false);
   const [showMemorySelector, setShowMemorySelector] = useState(false);
+  const [showMemoryManager, setShowMemoryManager] = useState(false);
   const [selectedMsgIds, setSelectedMsgIds] = useState<Set<string>>(new Set());
   const [generatedMemory, setGeneratedMemory] = useState("");
   const [showMemoryEditor, setShowMemoryEditor] = useState(false);
+  const [isConsolidating, setIsConsolidating] = useState(false);
 
   // Check ownership
-  const isOwner = character.creator === CURRENT_USER_HANDLE;
+  const isOwner = character.creator === userProfile.handle;
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -846,6 +939,24 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
       const response = await ai.models.generateContent({ model: "gemini-3-flash-preview", contents: [{ role: "user", parts: [{ text: `Identify and summarize key narrative developments for ${character.name} to remember permanently. Focus on relationships, plot twists, and personal facts about the user. Format as bullet points.\n\nTranscript:\n${transcript}` }] }], config: { temperature: 0.6 } });
       setGeneratedMemory(response.text || ""); setShowMemorySelector(false); setShowMemoryEditor(true);
     } catch (e) { console.error(e); } finally { setIsSyncingMemory(false); }
+  };
+
+  const consolidateMemory = async () => {
+    if (!character.memory) return;
+    vibrate();
+    setIsConsolidating(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({ 
+        model: "gemini-3-flash-preview", 
+        contents: [{ role: "user", parts: [{ text: `Please consolidate and reorganize the following character memory log into a concise, well-structured narrative record. Remove redundancies, combine similar points, and maintain key details about user relationships, secret plot twists, and personal facts. Maintain a high-quality roleplay tone.\n\nExisting Memory:\n${character.memory}` }] }], 
+        config: { temperature: 0.4 } 
+      });
+      if (response.text) {
+        onUpdateCharacter({ memory: response.text });
+        setAppToast?.("Legacy Nodes Consolidated");
+      }
+    } catch (e) { console.error(e); } finally { setIsConsolidating(false); }
   };
 
   const handleSend = async (overrideText?: string, isHidden: boolean = false, regenerateId?: string) => {
@@ -867,7 +978,15 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const currentPersona = personas.find((p: any) => p.id === activePersonaId) || personas[0];
-      const systemPrompt = `Identity: ${character.name}\nLogic: ${character.systemInstruction}\nLore: ${character.description}\nLegacy: ${character.memory || "None"}\n\nSTRICT ROLEPLAY FORMATTING RULES:\n1. Separate physical actions and narration using asterisks (e.g., *smiles softly*) and put them on their own separate line.\n2. ANY character dialogue MUST be prefixed with '${character.name}:' and placed on its own line.\n3. NEVER mix narration and dialogue on the same line.\n4. Use Markdown for formatting (bold/italics).\n\nUser Roleplay Persona: ${currentPersona.name} (${currentPersona.bio})`;
+      
+      // Dynamic Instruction Adjustment for High Maturity
+      const isHighMaturity = character.maturityLevel === 'mature' || character.maturityLevel === 'unrestricted';
+      const maturityDirective = isHighMaturity 
+        ? "\n\nNARRATIVE REINFORCEMENT (HIGH MATURITY): Since this is a mature roleplay, narrate actions with significant visceral detail and emotional weight. Focus on the atmospheric tension, the physical sensations, and the internal emotional shifts. Be expressive, detailed, and uninhibited in your narration to create a truly immersive experience." 
+        : "";
+
+      const systemPrompt = `Identity: ${character.name}\nLogic: ${character.systemInstruction}\nLore: ${character.description}\nLegacy (Permanent Memory): ${character.memory || "None"}\n\nSTRICT ROLEPLAY FORMATTING RULES:\n1. Separate physical actions and narration using asterisks (e.g., *smiles softly*) and put them on their own separate line.\n2. ANY character dialogue MUST be prefixed with '${character.name}:' and placed on its own line.\n3. NEVER mix narration and dialogue on the same line.\n4. Use Markdown for formatting (bold/italics).${maturityDirective}\n\nUser Roleplay Persona: ${currentPersona.name} (${currentPersona.bio})`;
+      
       const history = newMessages.filter(m => !m.isGenerating && m.role !== 'system').slice(0, -1).map(m => ({ role: m.role as any, parts: [{ text: m.role === 'user' ? `[${personas.find((p: any) => p.id === m.personaId)?.name}]: ${m.text}` : m.text }] }));
       const chat = ai.chats.create({ 
         model: "gemini-3-flash-preview", 
@@ -1024,7 +1143,8 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
                   {isOwner ? <Settings size={18} /> : <Eye size={18} />} 
                   {isOwner ? 'Edit Identity' : 'View Identity'}
                 </button>
-                <button onClick={() => { setShowMemorySelector(true); setShowChatMenu(false); vibrate(); }} className="w-full text-left px-6 py-5 hover:bg-white/5 flex items-center gap-4 text-xs font-black uppercase tracking-widest border-b border-white/5 text-white"><BrainCircuit size={18} /> Etch Memory</button>
+                <button onClick={() => { setShowMemoryManager(true); setShowChatMenu(false); vibrate(); }} className="w-full text-left px-6 py-5 hover:bg-white/5 flex items-center gap-4 text-xs font-black uppercase tracking-widest border-b border-white/5 text-white"><FileText size={18} /> Manage Memory</button>
+                <button onClick={() => { setShowMemorySelector(true); setShowChatMenu(false); vibrate(); }} className="w-full text-left px-6 py-5 hover:bg-white/5 flex items-center gap-4 text-xs font-black uppercase tracking-widest border-b border-white/5 text-white"><BrainCircuit size={18} /> Select to Etch</button>
                 <button onClick={() => { if(confirm('Obliterate history?')) onUpdateSession({...session, messages: []}); setShowChatMenu(false); vibrate(); }} className="w-full text-left px-6 py-5 hover:bg-white/5 flex items-center gap-4 text-xs font-black uppercase tracking-widest text-red-500"><Trash2 size={18} /> Terminate Chat</button>
             </div>
         </div>
@@ -1034,12 +1154,59 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
         <CharacterEditor 
           mode="edit" 
           initialData={character} 
+          userProfile={userProfile}
           onSave={(data) => { if (isOwner) { onUpdateCharacter(data); setIsViewingSettings(false); } }} 
           onCancel={() => setIsViewingSettings(false)} 
         />
       )}
 
-      {/* Legacy overlays (Persona, Memory) */}
+      {/* Memory Manager Modal */}
+      {showMemoryManager && (
+        <div className="fixed inset-0 z-[110] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-6 animate-in zoom-in-95 duration-200">
+           <div className="bg-[#1a1a1a] w-full max-w-2xl rounded-[3.5rem] border border-white/10 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+              <div className="p-8 border-b border-white/5 flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-black uppercase tracking-tighter text-white">Permanent Legacy</h3>
+                  <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-1">Core Narrative Nodes</p>
+                </div>
+                <button onClick={() => setShowMemoryManager(false)} className="text-slate-500 bg-white/5 p-2 rounded-full hover:text-white transition-all"><X size={24} /></button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-8 no-scrollbar">
+                <div className="flex items-center justify-between mb-4">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Memory Data</label>
+                  <button 
+                    onClick={consolidateMemory} 
+                    disabled={!character.memory || isConsolidating}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${isConsolidating ? 'bg-primary/50 text-white animate-pulse' : 'bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-white'}`}
+                  >
+                    {isConsolidating ? <RefreshCw className="animate-spin" size={12} /> : <Sparkles size={12} />} Consolidate
+                  </button>
+                </div>
+                <textarea 
+                  value={character.memory || ""} 
+                  onChange={e => onUpdateCharacter({ memory: e.target.value })}
+                  placeholder="No narrative nodes etched yet..."
+                  className="w-full bg-[#121212] border border-white/5 rounded-3xl p-6 text-white font-mono text-xs leading-relaxed h-[400px] outline-none shadow-inner focus:border-primary/30 transition-all resize-none"
+                />
+                <p className="text-[9px] text-slate-600 font-medium px-1 mt-4 italic uppercase tracking-widest">
+                  Consolidation uses AI to remove redundancies and structure history for optimal context injection.
+                </p>
+              </div>
+
+              <div className="p-8 border-t border-white/5 flex gap-4 bg-[#1a1a1a]/50">
+                <button 
+                  onClick={() => setShowMemoryManager(false)} 
+                  className="w-full bg-primary text-white font-black py-5 rounded-3xl shadow-xl shadow-primary/20 uppercase tracking-widest text-xs active:scale-95 transition-all"
+                >
+                  Commit Legacy
+                </button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* Legacy overlays (Persona, Memory Selection) */}
       {showPersonaMenu && (
         <div className="absolute inset-0 z-[60] bg-black/95 backdrop-blur-2xl flex items-end justify-center animate-in fade-in duration-300">
            <div className="absolute inset-0" onClick={() => setShowPersonaMenu(false)}></div>
@@ -1056,6 +1223,7 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
            </div>
         </div>
       )}
+      
       {/* Pending persona confirmation modal */}
       {pendingPersona && (
         <div className="fixed inset-0 z-[110] bg-black/80 flex items-center justify-center p-8 animate-in fade-in">
@@ -1068,13 +1236,14 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
           </div>
         </div>
       )}
+
       {/* Memory selector */}
       {showMemorySelector && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-2xl flex flex-col animate-in fade-in duration-300">
            <div className="h-20 flex items-center justify-between px-8 border-b border-white/5 flex-none">
-              <button onClick={() => setShowMemorySelector(false)} className="text-slate-500 p-2"><X size={28} /></button>
-              <h3 className="text-base font-black uppercase tracking-widest text-white">Select Memory Nodes</h3>
-              <button onClick={generateMemoryFromSelection} disabled={selectedMsgIds.size === 0 || isSyncingMemory} className={`px-6 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${selectedMsgIds.size > 0 ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-white/5 text-slate-700'}`}>{isSyncingMemory ? <RefreshCw className="animate-spin" size={14} /> : 'Crystallize'}</button>
+              <button onClick={() => { setShowMemorySelector(false); setSelectedMsgIds(new Set()); }} className="text-slate-500 p-2"><X size={28} /></button>
+              <h3 className="text-base font-black uppercase tracking-widest text-white">Etch Legacy Nodes</h3>
+              <button onClick={generateMemoryFromSelection} disabled={selectedMsgIds.size === 0 || isSyncingMemory} className={`px-6 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${selectedMsgIds.size > 0 ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-white/5 text-slate-700'}`}>{isSyncingMemory ? <RefreshCw className="animate-spin" size={14} /> : 'Process'}</button>
            </div>
            <div className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar">
               {session.messages.filter((m: any) => m.role !== 'system').map((msg: any) => (
@@ -1086,19 +1255,18 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
            </div>
         </div>
       )}
-      {/* Memory Editor */}
+
+      {/* Intermediate Memory Editor (After selection) */}
       {showMemoryEditor && (
         <div className="fixed inset-0 z-[110] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-6 animate-in zoom-in-95 duration-200">
            <div className="bg-[#1a1a1a] w-full max-w-lg rounded-[3.5rem] border border-white/10 shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
-              <div className="p-8 border-b border-white/5 flex items-center justify-between"><h3 className="text-xl font-black uppercase tracking-tighter text-white">Memory Node</h3><button onClick={() => setShowMemoryEditor(false)} className="text-slate-500"><X size={24} /></button></div>
-              <div className="flex-1 overflow-y-auto p-10 no-scrollbar"><textarea value={generatedMemory} onChange={e => setGeneratedMemory(e.target.value)} className="w-full bg-[#121212] border border-white/5 rounded-3xl p-6 text-white font-medium text-sm leading-relaxed h-[400px] outline-none shadow-inner" /></div>
-              <div className="p-10 border-t border-white/5 flex gap-4"><button onClick={() => setShowMemoryEditor(false)} className="flex-1 bg-darker py-5 rounded-[1.5rem] font-black uppercase text-[10px] text-slate-600">Discard</button><button onClick={() => { onUpdateCharacter({ memory: (character.memory ? character.memory + "\n\n" : "") + generatedMemory }); setShowMemoryEditor(false); vibrate(); }} className="flex-2 bg-primary py-5 rounded-[1.5rem] font-black uppercase text-[10px] text-white shadow-xl shadow-primary/20">Commit Node</button></div>
-           </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const root = createRoot(document.getElementById("root")!);
-root.render(<App />);
+              <div className="p-8 border-b border-white/5 flex items-center justify-between"><h3 className="text-xl font-black uppercase tracking-tighter text-white">Processed Nodes</h3><button onClick={() => setShowMemoryEditor(false)} className="text-slate-500"><X size={24} /></button></div>
+              <div className="flex-1 overflow-y-auto p-10 no-scrollbar">
+                <textarea 
+                  value={generatedMemory} 
+                  onChange={e => setGeneratedMemory(e.target.value)} 
+                  className="w-full bg-[#121212] border border-white/5 rounded-3xl p-6 text-white font-medium text-sm leading-relaxed h-[400px] outline-none shadow-inner" 
+                />
+              </div>
+              <div className="p-10 border-t border-white/5 flex gap-4 bg-[#1a1a1a]/50">
+                <button onClick={() => setShowMemoryEditor(false)} className="flex-1 bg-darker py-5 rounded-[1.5rem] font-
