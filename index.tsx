@@ -54,7 +54,8 @@ import {
   Pencil,
   FileText,
   AlignLeft,
-  Brain
+  Brain,
+  Trash
 } from "lucide-react";
 
 // Import character data and type
@@ -164,8 +165,8 @@ const DEFAULT_PERSONAS: Persona[] = [
   }
 ];
 
-// Fix: Added key prop to CharacterCard props type to resolve TS errors during map rendering in index.tsx
-const CharacterCard = ({ character, onStartChat }: { character: Character, onStartChat: (id: string) => void, key?: React.Key }) => (
+// Fix: Updated CharacterCard to use React.FC and refined prop types to resolve TypeScript errors when using 'key' prop in map() functions.
+const CharacterCard: React.FC<{ character: Character, onStartChat: (id: string) => void }> = ({ character, onStartChat }) => (
   <div className="bg-[#1a1a1a] rounded-3xl p-4 shadow-xl border border-white/5 flex flex-col gap-3 hover:border-primary/40 transition-all group active:scale-[0.98]">
     <div className="flex items-start justify-between">
       <AbstractAvatar name={character.name} colorClass={character.color} size="md" initial={character.initial} />
@@ -241,6 +242,13 @@ const App = () => {
     }
   };
 
+  const clearAllData = () => {
+    if (confirm("Are you sure? This will reset all characters, personas, and chats to default.")) {
+      localStorage.clear();
+      window.location.reload();
+    }
+  };
+
   const renderTabContent = () => {
     if (activeChatId) {
       const session = chats.find(c => c.id === activeChatId);
@@ -276,11 +284,11 @@ const App = () => {
       case "for_you": return <ForYouView characters={characters} onStartChat={startChat} />;
       case "featured": return <FeaturedView characters={characters} onStartChat={startChat} />;
       case "explore": return <ExploreView characters={characters} onStartChat={startChat} />;
-      case "chat": return <ChatListView chats={chats} characters={characters} onOpenChat={setActiveChatId} />;
-      case "create": return <CreateView initialMode={createViewMode} userProfile={userProfile} onCreateCharacter={(c: any) => { setCharacters([c, ...characters]); setActiveTab("library"); }} onCreatePersona={(p: any) => { setPersonas([p, ...personas]); setActiveTab("profile"); }} onBack={() => setActiveTab('for_you')} />;
-      case "library": return <LibraryView characters={characters} personas={personas} userProfile={userProfile} />;
-      case "profile": return <ProfileView personas={personas} activePersonaId={activePersonaId} setActivePersonaId={(id: string) => { setActivePersonaId(id); const p = personas.find(pers => pers.id === id); if (p) setAppToast(`Manifested: ${p.name}`); }} chats={chats} updatePersona={(p: any) => setPersonas(prev => prev.map(o => o.id === p.id ? p : o))} userProfile={userProfile} setUserProfile={setUserProfile} />;
-      case "settings": return <SettingsView />;
+      case "chat": return <ChatListView chats={chats} characters={characters} onOpenChat={setActiveChatId} onDeleteChat={(id: string) => setChats(chats.filter(c => c.id !== id))} />;
+      case "create": return <CreateView initialMode={createViewMode} userProfile={userProfile} onCreateCharacter={(c: any) => { setCharacters([c, ...characters]); setAppToast("Identity Manifested"); setActiveTab("library"); }} onCreatePersona={(p: any) => { setPersonas([p, ...personas]); setAppToast("Persona Formed"); setActiveTab("profile"); }} onBack={() => setActiveTab('for_you')} />;
+      case "library": return <LibraryView characters={characters} personas={personas} userProfile={userProfile} onEditCharacter={(c: Character) => { setCreateViewMode("character"); setActiveTab("create"); }} />;
+      case "profile": return <ProfileView personas={personas} activePersonaId={activePersonaId} setActivePersonaId={(id: string) => { setActivePersonaId(id); const p = personas.find(pers => pers.id === id); if (p) setAppToast(`Manifested: ${p.name}`); }} chats={chats} updatePersona={(p: any) => setPersonas(prev => prev.map(o => o.id === p.id ? p : o))} userProfile={userProfile} setUserProfile={setUserProfile} onDeletePersona={(id: string) => setPersonas(personas.filter(p => p.id !== id))} />;
+      case "settings": return <SettingsView onClearData={clearAllData} userProfile={userProfile} />;
       default: return <ForYouView characters={characters} onStartChat={startChat} />;
     }
   };
@@ -333,7 +341,8 @@ const NavItem = ({ id, label, icon: Icon, active, set }: any) => (
   </button>
 );
 
-const ForYouView = ({ characters, onStartChat }: any) => (
+// Fix: Specified prop types for ForYouView to ensure compatibility with CharacterCard requirements.
+const ForYouView = ({ characters, onStartChat }: { characters: Character[], onStartChat: (id: string) => void }) => (
   <div className="max-w-6xl mx-auto p-4 pb-24 space-y-10">
     <header className="mt-4 mb-2">
       <h1 className="text-4xl font-black bg-clip-text text-transparent bg-gradient-to-br from-blue-300 via-white to-blue-300 tracking-tighter">Ready for more?</h1>
@@ -350,14 +359,16 @@ const ForYouView = ({ characters, onStartChat }: any) => (
   </div>
 );
 
-const FeaturedView = ({ characters, onStartChat }: any) => (
+// Fix: Specified prop types for FeaturedView to ensure compatibility with CharacterCard requirements.
+const FeaturedView = ({ characters, onStartChat }: { characters: Character[], onStartChat: (id: string) => void }) => (
   <div className="max-w-6xl mx-auto p-4 pb-24">
     <h1 className="text-3xl font-black mb-8 uppercase tracking-tighter text-white">Originals</h1>
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{characters.map((c: Character) => <CharacterCard key={c.id} character={c} onStartChat={onStartChat} />)}</div>
   </div>
 );
 
-const ExploreView = ({ characters, onStartChat }: any) => {
+// Fix: Specified prop types for ExploreView to ensure compatibility with CharacterCard requirements.
+const ExploreView = ({ characters, onStartChat }: { characters: Character[], onStartChat: (id: string) => void }) => {
   const [search, setSearch] = useState("");
   const filtered = characters.filter((c: Character) => (search === "" || c.name.toLowerCase().includes(search.toLowerCase()) || c.tags.some(t => t.toLowerCase().includes(search.toLowerCase()))));
   return (
@@ -371,7 +382,7 @@ const ExploreView = ({ characters, onStartChat }: any) => {
   );
 };
 
-const ChatListView = ({ chats, characters, onOpenChat }: any) => {
+const ChatListView = ({ chats, characters, onOpenChat, onDeleteChat }: any) => {
   if (chats.length === 0) return <div className="flex flex-col items-center justify-center h-full text-center p-8 opacity-20"><MessageSquare size={56} className="mb-6" /><h3 className="text-xl font-black uppercase">Silence in the Multiverse</h3></div>;
   return (
     <div className="max-w-3xl mx-auto p-4 pb-24">
@@ -382,13 +393,16 @@ const ChatListView = ({ chats, characters, onOpenChat }: any) => {
           if (!char) return null;
           const lastMsg = chat.messages.filter(m => !m.isHidden).pop();
           return (
-            <button key={chat.id} onClick={() => onOpenChat(chat.id)} className="w-full bg-[#1a1a1a]/40 p-4 rounded-3xl flex items-center gap-4 hover:bg-[#1a1a1a] transition-all border border-transparent hover:border-white/5 text-left active:scale-[0.98]">
-              <AbstractAvatar name={char.name} colorClass={char.color} size="md" initial={char.initial} />
-              <div className="flex-1 min-w-0">
-                <div className="flex justify-between items-baseline mb-1"><h3 className="font-black text-lg truncate text-white">{char.name}</h3><span className="text-[9px] font-black text-slate-500 uppercase">{new Date(chat.lastActive).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></div>
-                <p className="text-xs text-slate-500 truncate font-medium">{lastMsg ? (lastMsg.role === 'user' ? 'You: ' : '') + lastMsg.text : "Awaiting word..."}</p>
-              </div>
-            </button>
+            <div key={chat.id} className="group relative flex items-center gap-2">
+              <button onClick={() => onOpenChat(chat.id)} className="flex-1 bg-[#1a1a1a]/40 p-4 rounded-3xl flex items-center gap-4 hover:bg-[#1a1a1a] transition-all border border-transparent hover:border-white/5 text-left active:scale-[0.98]">
+                <AbstractAvatar name={char.name} colorClass={char.color} size="md" initial={char.initial} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-baseline mb-1"><h3 className="font-black text-lg truncate text-white">{char.name}</h3><span className="text-[9px] font-black text-slate-500 uppercase">{new Date(chat.lastActive).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></div>
+                  <p className="text-xs text-slate-500 truncate font-medium">{lastMsg ? (lastMsg.role === 'user' ? 'You: ' : '') + lastMsg.text : "Awaiting word..."}</p>
+                </div>
+              </button>
+              <button onClick={() => onDeleteChat(chat.id)} className="p-4 text-slate-600 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={20} /></button>
+            </div>
           );
         })}
       </div>
@@ -406,38 +420,88 @@ const CharacterEditor = ({ initialData, onSave, onCancel, mode, userProfile }: {
   const [memory, setMemory] = useState(initialData.memory || "");
   const [visibility, setVisibility] = useState<"public" | "private">(initialData.visibility || "public");
   const [maturity, setMaturity] = useState<MaturityLevel>(initialData.maturityLevel || "teen");
-  const [isAILoading, setIsAILoading] = useState(false);
-
+  
   const isEditable = mode === "create" || initialData.creator === userProfile.handle;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-[#121212] backdrop-blur-3xl flex flex-col animate-in slide-in-from-right duration-300 overflow-hidden font-sans">
-      <div className="h-16 flex items-center justify-between px-6 border-b border-white/10 bg-[#121212]/50 sticky top-0 z-30">
+    <div className="fixed inset-0 z-[100] bg-[#121212] flex flex-col animate-in slide-in-from-right duration-300 overflow-hidden font-sans">
+      <div className="h-16 flex items-center justify-between px-6 border-b border-white/10 bg-[#121212]/50 sticky top-0 z-30 backdrop-blur-md">
         <div className="flex items-center gap-4">
           <button onClick={onCancel} className="text-slate-400 p-2 hover:text-white transition-colors"><ChevronLeft size={20} /></button>
-          <span className="text-sm font-black uppercase tracking-[0.1em] text-white/90">{mode === 'create' ? 'Build Identity' : 'Settings'}</span>
+          <span className="text-sm font-black uppercase tracking-[0.1em] text-white/90">{mode === 'create' ? 'Build Identity' : 'Core Settings'}</span>
         </div>
-        {isEditable ? (
-          <button onClick={() => { vibrate(); onSave({ name, tagline, subtitle, description, greeting, systemInstruction, memory, visibility, maturityLevel: maturity }); }} className="text-primary font-black text-xs uppercase tracking-widest">Save</button>
-        ) : <div className="w-12"></div>}
+        {isEditable && (
+          <button onClick={() => { vibrate(); onSave({ name, tagline, subtitle, description, greeting, systemInstruction, memory, visibility, maturityLevel: maturity }); }} className="bg-primary text-white font-black text-[10px] uppercase tracking-widest px-6 py-2 rounded-full shadow-lg shadow-primary/20">Save</button>
+        )}
       </div>
 
-      <div className="flex-1 overflow-y-auto no-scrollbar pb-32 p-6 space-y-8">
-        <div className="space-y-4">
-           <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Name</label>
-           <input readOnly={!isEditable} value={name} onChange={e => setName(e.target.value)} className="w-full bg-[#1a1a1a] border border-white/10 rounded-2xl p-4 text-white font-bold outline-none" />
+      <div className="flex-1 overflow-y-auto no-scrollbar pb-32 p-6 space-y-10 max-w-2xl mx-auto w-full">
+        <div className="flex flex-col items-center gap-6 mb-4">
+            <AbstractAvatar name={name || "New"} colorClass="bg-indigo-600" size="xl" initial={name ? name[0] : "?"} />
+            <div className="text-center">
+              <h2 className="text-xl font-black text-white uppercase tracking-tighter">{name || "Unnamed Entity"}</h2>
+              <p className="text-[10px] font-bold text-primary uppercase tracking-[0.2em] mt-1">{visibility}</p>
+            </div>
         </div>
-        <div className="space-y-4">
-           <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Description</label>
-           <textarea readOnly={!isEditable} value={description} onChange={e => setDescription(e.target.value)} className="w-full bg-[#1a1a1a] border border-white/10 rounded-2xl p-4 text-white h-32 outline-none" />
-        </div>
-        <div className="space-y-4">
-           <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Maturity</label>
-           <div className={`flex bg-[#1a1a1a] p-1 rounded-2xl border border-white/10 ${!isEditable ? 'opacity-50 pointer-events-none' : ''}`}>
-             {["everyone", "teen", "mature", "unrestricted"].map(lvl => (
-               <button key={lvl} onClick={() => setMaturity(lvl as any)} className={`flex-1 py-3 rounded-xl text-[9px] font-black uppercase tracking-tighter ${maturity === lvl ? 'bg-primary text-white' : 'text-slate-500'}`}>{lvl}</button>
-             ))}
-           </div>
+
+        <div className="space-y-6">
+          <section className="space-y-4">
+            <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Identity Profile</h3>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[9px] font-black text-slate-600 uppercase ml-3">Entity Name</label>
+                <input readOnly={!isEditable} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Tony Stark" className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:border-primary/30 transition-all" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[9px] font-black text-slate-600 uppercase ml-3">Tagline</label>
+                <input readOnly={!isEditable} value={tagline} onChange={e => setTagline(e.target.value)} placeholder="A short hook..." className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:border-primary/30 transition-all" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[9px] font-black text-slate-600 uppercase ml-3">Subtitle / Role</label>
+                <input readOnly={!isEditable} value={subtitle} onChange={e => setSubtitle(e.target.value)} placeholder="e.g. Iron Man" className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:border-primary/30 transition-all" />
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">AI Behavior & Lore</h3>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[9px] font-black text-slate-600 uppercase ml-3">Description / Bio</label>
+                <textarea readOnly={!isEditable} value={description} onChange={e => setDescription(e.target.value)} placeholder="Tell the world who this is..." className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 text-white h-32 outline-none focus:border-primary/30 transition-all resize-none" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[9px] font-black text-slate-600 uppercase ml-3">System Instruction (Hidden)</label>
+                <textarea readOnly={!isEditable} value={systemInstruction} onChange={e => setSystemInstruction(e.target.value)} placeholder="Rules for the AI's personality..." className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 text-white h-48 outline-none font-mono text-xs focus:border-primary/30 transition-all resize-none" />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[9px] font-black text-slate-600 uppercase ml-3">Greeting Message</label>
+                <textarea readOnly={!isEditable} value={greeting} onChange={e => setGreeting(e.target.value)} placeholder="The first thing they say..." className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 text-white h-32 outline-none focus:border-primary/30 transition-all resize-none" />
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-4">
+            <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Safety & Visibility</h3>
+            <div className="grid grid-cols-2 gap-4">
+               <div className="space-y-2">
+                 <label className="text-[9px] font-black text-slate-600 uppercase ml-3">Visibility</label>
+                 <select disabled={!isEditable} value={visibility} onChange={e => setVisibility(e.target.value as any)} className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 text-white font-bold outline-none appearance-none">
+                   <option value="public">Public</option>
+                   <option value="private">Private</option>
+                 </select>
+               </div>
+               <div className="space-y-2">
+                 <label className="text-[9px] font-black text-slate-600 uppercase ml-3">Maturity</label>
+                 <select disabled={!isEditable} value={maturity} onChange={e => setMaturity(e.target.value as any)} className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 text-white font-bold outline-none appearance-none">
+                   <option value="everyone">Everyone</option>
+                   <option value="teen">Teen</option>
+                   <option value="mature">Mature</option>
+                   <option value="unrestricted">Unrestricted</option>
+                 </select>
+               </div>
+            </div>
+          </section>
         </div>
       </div>
     </div>
@@ -450,55 +514,191 @@ const CreateView = ({ onCreateCharacter, onCreatePersona, onBack, initialMode, u
   const [personaBio, setPersonaBio] = useState("");
 
   if (mode === 'character') {
-    return <CharacterEditor mode="create" userProfile={userProfile} initialData={{ creator: userProfile.handle }} onCancel={onBack} onSave={(data) => onCreateCharacter({ id: `char_${Date.now()}`, initial: data.name![0].toUpperCase(), color: 'bg-indigo-600', creator: userProfile.handle, ...data })} />;
+    return <CharacterEditor mode="create" userProfile={userProfile} initialData={{ creator: userProfile.handle }} onCancel={onBack} onSave={(data) => onCreateCharacter({ id: `char_${Date.now()}`, initial: data.name![0].toUpperCase(), color: 'bg-indigo-600', creator: userProfile.handle, engagement: "0", tags: [], ...data })} />;
   }
 
   return (
-    <div className="flex flex-col h-full bg-[#121212] p-6">
-      <h1 className="text-2xl font-black uppercase mb-8">New Persona</h1>
-      <input value={personaName} onChange={e => setPersonaName(e.target.value)} placeholder="Persona Name" className="bg-[#1a1a1a] border border-white/5 p-4 rounded-2xl mb-4 w-full" />
-      <textarea value={personaBio} onChange={e => setPersonaBio(e.target.value)} placeholder="Bio..." className="bg-[#1a1a1a] border border-white/5 p-4 rounded-2xl mb-6 w-full h-32" />
-      <button onClick={() => onCreatePersona({ id: `p_${Date.now()}`, name: personaName, bio: personaBio, traits: [], isPrivate: true, avatarColor: "bg-blue-600" })} className="bg-primary text-white font-black py-4 rounded-2xl uppercase tracking-widest">Manifest</button>
+    <div className="flex flex-col h-full bg-[#121212] p-6 animate-in fade-in duration-300">
+      <div className="flex items-center gap-4 mb-10">
+        <button onClick={onBack} className="p-2 text-slate-500 hover:text-white"><ChevronLeft size={24}/></button>
+        <h1 className="text-2xl font-black uppercase tracking-tighter">New Persona</h1>
+      </div>
+      <div className="space-y-6 max-w-lg mx-auto w-full">
+        <div className="space-y-2">
+           <label className="text-[9px] font-black text-slate-500 uppercase ml-3">Persona Name</label>
+           <input value={personaName} onChange={e => setPersonaName(e.target.value)} placeholder="Who are you in this chat?" className="w-full bg-[#1a1a1a] border border-white/5 p-4 rounded-2xl text-white font-bold outline-none" />
+        </div>
+        <div className="space-y-2">
+           <label className="text-[9px] font-black text-slate-500 uppercase ml-3">Bio / Background</label>
+           <textarea value={personaBio} onChange={e => setPersonaBio(e.target.value)} placeholder="Describe your background, appearance, or role..." className="w-full bg-[#1a1a1a] border border-white/5 p-4 rounded-2xl text-white h-40 outline-none resize-none" />
+        </div>
+        <button onClick={() => { vibrate(); onCreatePersona({ id: `p_${Date.now()}`, name: personaName, bio: personaBio, traits: [], isPrivate: true, avatarColor: "bg-blue-600" }); }} disabled={!personaName.trim()} className="w-full bg-primary text-white font-black py-5 rounded-2xl uppercase tracking-widest shadow-xl shadow-primary/20 disabled:opacity-30 disabled:shadow-none transition-all">Form Persona</button>
+      </div>
     </div>
   );
 };
 
-const LibraryView = ({ characters, personas, userProfile }: any) => (
-  <div className="p-6">
-    <h1 className="text-3xl font-black mb-10 uppercase tracking-tighter">Library</h1>
-    <h2 className="text-[10px] font-black text-slate-600 uppercase mb-4 tracking-widest">My Creations</h2>
-    <div className="space-y-3">{characters.filter((c:any) => c.creator === userProfile.handle).map((c:any) => <div key={c.id} className="bg-[#1a1a1a] p-4 rounded-3xl flex items-center gap-4"><AbstractAvatar name={c.name} colorClass={c.color} size="sm" initial={c.initial}/><div className="font-bold">{c.name}</div></div>)}</div>
+const LibraryView = ({ characters, personas, userProfile, onEditCharacter }: any) => (
+  <div className="p-6 max-w-4xl mx-auto w-full">
+    <h1 className="text-3xl font-black mb-10 uppercase tracking-tighter">My Library</h1>
+    
+    <div className="space-y-10">
+      <section>
+        <h2 className="text-[10px] font-black text-slate-600 uppercase mb-4 tracking-widest flex items-center gap-2 px-1">My Creations</h2>
+        <div className="space-y-3">
+          {characters.filter((c:any) => c.creator === userProfile.handle).map((c:any) => (
+            <div key={c.id} className="bg-[#1a1a1a] p-4 rounded-3xl flex items-center justify-between group border border-white/5 hover:border-primary/20 transition-all">
+              <div className="flex items-center gap-4">
+                <AbstractAvatar name={c.name} colorClass={c.color} size="sm" initial={c.initial}/>
+                <div>
+                  <div className="font-bold text-white">{c.name}</div>
+                  <div className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">{c.visibility}</div>
+                </div>
+              </div>
+              <button onClick={() => onEditCharacter(c)} className="p-3 text-slate-500 hover:text-white"><Pencil size={18} /></button>
+            </div>
+          ))}
+          {characters.filter((c:any) => c.creator === userProfile.handle).length === 0 && (
+            <div className="py-10 text-center opacity-30 text-xs font-bold uppercase tracking-widest">Nothing created yet.</div>
+          )}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-[10px] font-black text-slate-600 uppercase mb-4 tracking-widest px-1">My Personas</h2>
+        <div className="space-y-3">
+          {personas.filter((p:any) => p.id !== 'p_default').map((p:any) => (
+            <div key={p.id} className="bg-[#1a1a1a]/50 p-4 rounded-3xl flex items-center gap-4 border border-white/5">
+              <div className={`w-10 h-10 ${p.avatarColor} rounded-full flex items-center justify-center font-black`}>{p.name[0]}</div>
+              <div className="flex-1">
+                <div className="font-bold text-white">{p.name}</div>
+                <div className="text-[10px] text-slate-500 truncate max-w-[200px]">{p.bio}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
   </div>
 );
 
-const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfile, setUserProfile }: any) => {
+const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfile, setUserProfile, onDeletePersona }: any) => {
   const [isEditing, setIsEditing] = useState(false);
-  const [name, setName] = useState(userProfile.name);
+  const [editedName, setEditedName] = useState(userProfile.name);
+  const [editedHandle, setEditedHandle] = useState(userProfile.handle);
+
+  const saveProfile = () => {
+    setUserProfile({ ...userProfile, name: editedName, handle: editedHandle, avatarInitial: editedName[0].toUpperCase() });
+    setIsEditing(false);
+    vibrate();
+  };
 
   return (
-    <div className="p-6 max-w-lg mx-auto">
-      <div className="flex flex-col items-center mb-10">
-        <div className="w-24 h-24 bg-primary rounded-[2rem] flex items-center justify-center text-4xl font-black mb-4">{userProfile.avatarInitial}</div>
-        <h1 className="text-2xl font-black">{userProfile.name}</h1>
-        <div className="text-slate-500 font-bold">{userProfile.handle}</div>
+    <div className="p-6 max-w-lg mx-auto w-full pb-32">
+      <div className="flex flex-col items-center mb-12">
+        <div className="relative group">
+          <div className="w-24 h-24 bg-primary rounded-[2.5rem] flex items-center justify-center text-4xl font-black mb-4 shadow-2xl shadow-primary/30 group-hover:scale-105 transition-transform">{userProfile.avatarInitial}</div>
+          <button onClick={() => setIsEditing(!isEditing)} className="absolute bottom-4 right-0 bg-[#1a1a1a] border border-white/10 p-2 rounded-full shadow-xl hover:bg-white/10 text-primary"><Pencil size={14} /></button>
+        </div>
+        
+        {isEditing ? (
+          <div className="w-full space-y-4 mt-4 animate-in slide-in-from-top-4">
+             <input value={editedName} onChange={e => setEditedName(e.target.value)} placeholder="Display Name" className="w-full bg-[#1a1a1a] border border-white/5 p-4 rounded-2xl text-center font-black outline-none focus:border-primary/40" />
+             <input value={editedHandle} onChange={e => setEditedHandle(e.target.value)} placeholder="@handle" className="w-full bg-[#1a1a1a] border border-white/5 p-4 rounded-2xl text-center font-bold text-slate-500 outline-none focus:border-primary/40" />
+             <button onClick={saveProfile} className="w-full bg-primary text-white font-black py-4 rounded-2xl uppercase tracking-widest text-xs">Update Profile</button>
+          </div>
+        ) : (
+          <div className="text-center">
+            <h1 className="text-3xl font-black tracking-tighter text-white">{userProfile.name}</h1>
+            <div className="text-slate-500 font-bold uppercase tracking-widest text-[10px] mt-1">{userProfile.handle}</div>
+          </div>
+        )}
       </div>
-      <h2 className="text-[10px] font-black text-slate-600 uppercase mb-4 tracking-widest">Active Persona</h2>
-      <div className="space-y-2">
-        {personas.map((p: any) => (
-          <button key={p.id} onClick={() => setActivePersonaId(p.id)} className={`w-full p-5 rounded-[1.8rem] text-left transition-all border-2 ${activePersonaId === p.id ? 'bg-primary border-primary text-white shadow-xl shadow-primary/20' : 'bg-[#1a1a1a] border-white/5 text-slate-400'}`}>
-            <div className="font-black text-lg">{p.name}</div>
-            <div className="text-xs opacity-60 truncate">{p.bio}</div>
-          </button>
-        ))}
+
+      <div className="space-y-8">
+        <section>
+          <div className="flex items-center justify-between mb-4 px-1">
+            <h2 className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Manifested Personas</h2>
+            <div className="text-[10px] font-black text-primary uppercase">{personas.length} total</div>
+          </div>
+          <div className="space-y-3">
+            {personas.map((p: any) => (
+              <div key={p.id} className={`group flex items-center gap-2 p-1 transition-all`}>
+                <button 
+                  onClick={() => setActivePersonaId(p.id)} 
+                  className={`flex-1 p-5 rounded-[2rem] text-left transition-all border-2 relative overflow-hidden ${activePersonaId === p.id ? 'bg-primary border-primary text-white shadow-xl shadow-primary/20' : 'bg-[#1a1a1a] border-white/5 text-slate-400 hover:border-white/10'}`}
+                >
+                  <div className="relative z-10 flex items-center justify-between">
+                    <div>
+                      <div className="font-black text-lg">{p.name}</div>
+                      <div className="text-xs opacity-60 truncate max-w-[200px] leading-relaxed">{p.bio}</div>
+                    </div>
+                    {activePersonaId === p.id && <Check size={20} className="text-white" />}
+                  </div>
+                </button>
+                {p.id !== 'p_default' && (
+                  <button onClick={() => onDeletePersona(p.id)} className="p-4 text-slate-700 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={20} /></button>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
     </div>
   );
 };
 
-const SettingsView = () => (
-  <div className="p-6 flex flex-col items-center justify-center h-full opacity-30">
-    <Settings size={64} className="mb-4" />
-    <h1 className="text-xl font-black uppercase">Core System</h1>
+const SettingsView = ({ onClearData, userProfile }: any) => (
+  <div className="p-6 max-w-lg mx-auto w-full">
+    <h1 className="text-3xl font-black mb-10 uppercase tracking-tighter">Settings</h1>
+    
+    <div className="space-y-10">
+      <section className="space-y-4">
+        <h2 className="text-[10px] font-black text-slate-600 uppercase tracking-widest px-1">Account & Safety</h2>
+        <div className="bg-[#1a1a1a] rounded-[2rem] overflow-hidden border border-white/5">
+          <div className="p-6 flex items-center justify-between border-b border-white/5">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-blue-500/10 text-blue-500 rounded-2xl"><Shield size={20}/></div>
+              <div className="font-black text-sm">Safe Content Filtering</div>
+            </div>
+            <div className="w-12 h-6 bg-primary rounded-full relative"><div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm"></div></div>
+          </div>
+          <div className="p-6 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-purple-500/10 text-purple-500 rounded-2xl"><Lock size={20}/></div>
+              <div className="font-black text-sm">Incognito Mode</div>
+            </div>
+            <div className="w-12 h-6 bg-slate-800 rounded-full relative"><div className="absolute left-1 top-1 w-4 h-4 bg-slate-400 rounded-full shadow-sm"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-[10px] font-black text-slate-600 uppercase tracking-widest px-1">Data Management</h2>
+        <div className="bg-[#1a1a1a] rounded-[2rem] overflow-hidden border border-white/5">
+          <button onClick={onClearData} className="w-full p-6 flex items-center gap-4 hover:bg-red-500/10 transition-colors text-left border-b border-white/5 group">
+            <div className="p-3 bg-red-500/10 text-red-500 rounded-2xl group-hover:bg-red-500 group-hover:text-white transition-all"><RefreshCw size={20}/></div>
+            <div>
+              <div className="font-black text-sm text-red-500">Reset All Systems</div>
+              <div className="text-[10px] font-bold text-slate-600 uppercase mt-0.5">Wipe all chats and identities</div>
+            </div>
+          </button>
+          <div className="p-6 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-stone-500/10 text-stone-500 rounded-2xl"><Library size={20}/></div>
+              <div className="font-black text-sm">Offline Cache</div>
+            </div>
+            <span className="text-[10px] font-black text-slate-500">12.4 MB</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-4 text-center pb-10">
+        <div className="w-12 h-12 bg-primary/20 text-primary mx-auto rounded-2xl flex items-center justify-center font-black text-xl mb-4">M</div>
+        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Moonai v2.4.0 (Build: Legacy-Node)</p>
+        <p className="text-xs text-slate-600 px-10 italic">"Whispers from the digital abyss."</p>
+      </section>
+    </div>
   </div>
 );
 
@@ -586,7 +786,6 @@ const ChatInterface = ({ session, character, personas, activePersonaId, onBack, 
       const currentPersona = personas.find((p: any) => p.id === activePersonaId) || personas[0];
       const isHighMaturity = character.maturityLevel === 'mature' || character.maturityLevel === 'unrestricted';
       
-      // Inject character memory into the instruction
       const memoryDirective = character.memory 
         ? `\n\nPERMANENT MEMORY & LORE:\n${character.memory}` 
         : "";
@@ -595,7 +794,6 @@ const ChatInterface = ({ session, character, personas, activePersonaId, onBack, 
       
       const history = newMessages.filter(m => !m.isGenerating).map(m => ({ role: m.role as any, parts: [{ text: m.text }] }));
       
-      // @google/genai guidelines: Fixed unawaited generateContent call by removing it and correctly using generateContentStream with combined safety settings.
       const response = await ai.models.generateContentStream({ 
         model: "gemini-3-flash-preview", 
         contents: history,
@@ -629,7 +827,6 @@ const ChatInterface = ({ session, character, personas, activePersonaId, onBack, 
 
   return (
     <div className="flex flex-col h-full bg-[#121212] relative">
-      {/* Header */}
       <div className="h-20 flex items-center justify-between px-4 border-b border-white/5 bg-[#121212]/80 backdrop-blur-xl z-20">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="p-2 text-slate-400 hover:text-white transition-colors"><ChevronLeft size={28} /></button>
@@ -644,7 +841,6 @@ const ChatInterface = ({ session, character, personas, activePersonaId, onBack, 
         </div>
       </div>
 
-      {/* Message Stream */}
       <div className="flex-1 overflow-y-auto p-4 space-y-8 no-scrollbar pb-24" ref={scrollRef}>
         <div className="max-w-4xl mx-auto w-full space-y-8">
           {session.messages.map((msg: any) => (
@@ -674,7 +870,6 @@ const ChatInterface = ({ session, character, personas, activePersonaId, onBack, 
         </div>
       </div>
 
-      {/* Memory Selection Tray */}
       {isSelectingForEtch && (
         <div className="absolute bottom-24 left-1/2 -translate-x-1/2 w-full max-w-md px-4 z-[30] animate-in slide-in-from-bottom-10">
           <div className="bg-[#1a1a1a] p-4 rounded-3xl flex items-center justify-between shadow-2xl border border-white/10 backdrop-blur-xl">
@@ -692,7 +887,6 @@ const ChatInterface = ({ session, character, personas, activePersonaId, onBack, 
         </div>
       )}
 
-      {/* Input Composer */}
       <div className="bg-[#121212]/80 backdrop-blur-2xl border-t border-white/5 p-4 pb-10 z-20">
         <div className="max-w-4xl mx-auto w-full flex items-end gap-3 bg-[#1a1a1a]/50 p-3 rounded-[2.5rem] border border-white/10 shadow-inner">
           <textarea value={input} onChange={e => setInput(e.target.value)} placeholder={`Echo as persona...`} className="flex-1 bg-transparent border-none focus:outline-none text-white text-base py-1.5 px-3 resize-none font-medium leading-relaxed" rows={1} />
@@ -700,7 +894,6 @@ const ChatInterface = ({ session, character, personas, activePersonaId, onBack, 
         </div>
       </div>
 
-      {/* Chat Sub-menu */}
       {showChatMenu && (
         <div className="fixed inset-0 z-30 flex items-start justify-end p-6 pt-24" onClick={() => setShowChatMenu(false)}>
             <div className="w-64 bg-[#1a1a1a] border border-white/10 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
@@ -711,7 +904,6 @@ const ChatInterface = ({ session, character, personas, activePersonaId, onBack, 
         </div>
       )}
 
-      {/* Memory Manager Modal */}
       {showMemoryManager && (
         <div className="fixed inset-0 z-[110] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="bg-[#1a1a1a] w-full max-w-2xl rounded-[3.5rem] border border-white/10 flex flex-col max-h-[85vh] overflow-hidden shadow-2xl">
