@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { GoogleGenAI, HarmCategory, HarmBlockThreshold, Modality } from "@google/genai";
 import {
   MessageSquare,
   User,
@@ -56,7 +56,10 @@ import {
   AlignLeft,
   Brain,
   Trash,
-  UserPlus
+  UserPlus,
+  Volume2,
+  ChevronLeftCircle,
+  ChevronRightCircle
 } from "lucide-react";
 
 // Import character data and type
@@ -97,7 +100,6 @@ interface ChatSession {
   characterId: string;
   messages: Message[];
   lastActive: number;
-  suggestions?: string[];
 }
 
 // --- Utilities ---
@@ -105,6 +107,34 @@ interface ChatSession {
 const vibrate = (ms: number = 10) => {
   if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(ms);
 };
+
+function decode(base64: string) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function decodeAudioData(
+  data: Uint8Array,
+  ctx: AudioContext,
+  sampleRate: number,
+  numChannels: number,
+): Promise<AudioBuffer> {
+  const dataInt16 = new Int16Array(data.buffer);
+  const frameCount = dataInt16.length / numChannels;
+  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+  for (let channel = 0; channel < numChannels; channel++) {
+    const channelData = buffer.getChannelData(channel);
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+    }
+  }
+  return buffer;
+}
 
 // --- Components ---
 
@@ -282,7 +312,6 @@ const App = () => {
       setActiveChatId(null); 
     }
     
-    // Character Editor Modal (Full Page)
     if (editingCharacterId) {
        const char = characters.find(c => c.id === editingCharacterId);
        if (char) {
@@ -660,8 +689,8 @@ const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfil
         
         {isEditing ? (
           <div className="w-full space-y-4 mt-4 animate-in slide-in-from-top-4">
-             <input value={editedName} onChange={e => setEditedName(e.target.value)} placeholder="Display Name" className="w-full bg-[#1a1a1a] border border-white/5 p-4 rounded-2xl text-center font-black outline-none focus:border-primary/40 transition-all" />
-             <input value={editedHandle} onChange={e => setEditedHandle(e.target.value)} placeholder="@handle" className="w-full bg-[#1a1a1a] border border-white/5 p-4 rounded-2xl text-center font-bold text-slate-500 outline-none focus:border-primary/40 transition-all" />
+             <input value={editedName} onChange={setEditedName} placeholder="Display Name" className="w-full bg-[#1a1a1a] border border-white/5 p-4 rounded-2xl text-center font-black outline-none focus:border-primary/40 transition-all" />
+             <input value={editedHandle} onChange={setEditedHandle} placeholder="@handle" className="w-full bg-[#1a1a1a] border border-white/5 p-4 rounded-2xl text-center font-bold text-slate-500 outline-none focus:border-primary/40 transition-all" />
              <div className="flex gap-2">
                <button onClick={() => setIsEditing(false)} className="flex-1 bg-white/5 text-slate-400 font-black py-4 rounded-2xl uppercase tracking-widest text-xs">Cancel</button>
                <button onClick={saveProfile} className="flex-1 bg-primary text-white font-black py-4 rounded-2xl uppercase tracking-widest text-xs shadow-lg shadow-primary/20">Save</button>
@@ -713,7 +742,6 @@ const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfil
         </section>
       </div>
 
-      {/* Persona Edit Modal */}
       {editingPersona && (
         <div className="fixed inset-0 z-[120] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="bg-[#1a1a1a] w-full max-w-md rounded-[3rem] border border-white/10 p-8 space-y-6 shadow-2xl">
@@ -746,7 +774,6 @@ const SettingsView = ({ onClearData, userProfile }: any) => {
   return (
     <div className="p-6 max-w-lg mx-auto w-full pb-32">
       <h1 className="text-3xl font-black mb-10 uppercase tracking-tighter">System Config</h1>
-      
       <div className="space-y-10">
         <section className="space-y-4">
           <h2 className="text-[10px] font-black text-slate-600 uppercase tracking-widest px-1">Neural Settings</h2>
@@ -777,42 +804,21 @@ const SettingsView = ({ onClearData, userProfile }: any) => {
             </div>
           </div>
         </section>
-
-        <section className="space-y-4">
-          <h2 className="text-[10px] font-black text-slate-600 uppercase tracking-widest px-1">Memory Matrix</h2>
-          <div className="bg-[#1a1a1a] rounded-[2rem] overflow-hidden border border-white/5">
-            <button onClick={onClearData} className="w-full p-6 flex items-center gap-4 hover:bg-red-500/10 transition-colors text-left border-b border-white/5 group">
-              <div className="p-3 bg-red-500/10 text-red-500 rounded-2xl group-hover:bg-red-500 group-hover:text-white transition-all"><RefreshCw size={20}/></div>
-              <div>
-                <div className="font-black text-sm text-red-500">Reset Neural Paths</div>
-                <div className="text-[10px] font-bold text-slate-600 uppercase mt-0.5">Clears all localized persona data</div>
-              </div>
-            </button>
-            <div className="p-6 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="p-3 bg-stone-500/10 text-stone-500 rounded-2xl"><Library size={20}/></div>
-                <div className="font-black text-sm">Identity Persistence</div>
-              </div>
-              <span className="text-[10px] font-black text-slate-500">Enabled</span>
-            </div>
-          </div>
-        </section>
-
         <section className="space-y-4 text-center pb-10">
           <div className="w-12 h-12 bg-primary/20 text-primary mx-auto rounded-2xl flex items-center justify-center font-black text-xl mb-4">M</div>
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Moonai v2.5.1 (Persona Hub)</p>
-          <p className="text-xs text-slate-600 px-10 italic">"The self is but a variable in the grand equation."</p>
+          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Moonai v2.6.0 (Immersive)</p>
         </section>
       </div>
     </div>
   );
 };
 
-// --- MAIN CHAT INTERFACE & MEMORY MANAGEMENT ---
+// --- MAIN CHAT INTERFACE & IMMERSIVE FEATURES ---
 
 const ChatInterface = ({ session, character, personas, activePersonaId, setActivePersonaId, onBack, onUpdateSession, onUpdateCharacter, userProfile, setAppToast }: any) => {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showChatMenu, setShowChatMenu] = useState(false);
   const [isSelectingForEtch, setIsSelectingForEtch] = useState(false);
@@ -821,6 +827,8 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
   const [isConsolidating, setIsConsolidating] = useState(false);
   const [isViewingSettings, setIsViewingSettings] = useState(false);
   const [showPersonaShift, setShowPersonaShift] = useState(false);
+
+  const audioCtxRef = useRef<AudioContext | null>(null);
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [session.messages, loading]);
 
@@ -832,51 +840,98 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
     setSelectedMsgIds(next);
   };
 
-  const etchSelectedMessages = async () => {
-    if (selectedMsgIds.size === 0) return;
-    vibrate(20);
-    setLoading(true);
+  const playVoice = async (msgId: string, text: string) => {
+    if (isSpeaking === msgId) return;
+    vibrate(10);
+    setIsSpeaking(msgId);
     try {
-      const selectedMsgs = session.messages.filter((m: any) => selectedMsgIds.has(m.id));
-      const transcript = selectedMsgs.map((m: any) => `${m.role === 'user' ? 'User' : character.name}: ${m.text}`).join('\n');
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({ 
-        model: "gemini-3-flash-preview", 
-        contents: [{ role: "user", parts: [{ text: `Synthesize the following conversation snippet into one or two highly concise bulleted memory nodes for the character ${character.name}. Focus on permanent narrative shifts, core secrets revealed, and relationship status changes. Maintain the roleplay's tone.\n\nConversation Transcript:\n${transcript}` }] }] 
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash-preview-tts",
+        contents: [{ parts: [{ text: `Say this naturally in character: ${text}` }] }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: character.id.includes('tony') ? 'Puck' : 'Kore' },
+            },
+          },
+        },
       });
-      const newNode = response.text || "";
-      onUpdateCharacter({ memory: (character.memory ? character.memory + "\n" : "") + "• " + newNode });
-      setAppToast?.("Legacy Node Etched");
-      setSelectedMsgIds(new Set());
-      setIsSelectingForEtch(false);
-    } catch (e) { 
+
+      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+      if (base64Audio) {
+        if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({sampleRate: 24000});
+        const ctx = audioCtxRef.current;
+        const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
+        const source = ctx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(ctx.destination);
+        source.onended = () => setIsSpeaking(null);
+        source.start();
+      } else {
+        setIsSpeaking(null);
+      }
+    } catch (e) {
       console.error(e);
-      setAppToast?.("Memory processing failed.");
+      setIsSpeaking(null);
+    }
+  };
+
+  const regenerateMessage = async (msgId: string) => {
+    vibrate(20);
+    const msgToReplace = session.messages.find((m:any) => m.id === msgId);
+    if (!msgToReplace) return;
+
+    setLoading(true);
+    // Remove the message and everything after it to regenerate
+    const msgIndex = session.messages.findIndex((m:any) => m.id === msgId);
+    const contextHistory = session.messages.slice(0, msgIndex);
+    
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const currentPersona = personas.find((p: any) => p.id === activePersonaId) || personas[0];
+      const isHighMaturity = character.maturityLevel === 'mature' || character.maturityLevel === 'unrestricted';
+      const memoryDirective = character.memory ? `\n\nPERMANENT MEMORY:\n${character.memory}` : "";
+      const systemPrompt = `Identity: ${character.name}\nLore: ${character.description}${memoryDirective}\n\nSTRICT ROLEPLAY RULES:\n1. Actions in asterisks.\n2. Dialogue MUST be prefixed with '${character.name}:'.\n3. Provide a unique, creative variation of the scene.\n\nUser Persona: ${currentPersona.name}`;
+      
+      const history = contextHistory.map((m: any) => ({ role: m.role as any, parts: [{ text: m.text }] }));
+      
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: history,
+        config: { systemInstruction: systemPrompt, temperature: 1.0 }
+      });
+
+      const newText = response.text || "";
+      const existingVersions = msgToReplace.versions || [msgToReplace.text];
+      const newVersions = [...existingVersions, newText];
+      
+      const updatedMessages = session.messages.map((m: any) => 
+        m.id === msgId ? { ...m, text: newText, versions: newVersions, currentVersionIndex: newVersions.length - 1 } : m
+      );
+
+      onUpdateSession({ ...session, messages: updatedMessages, lastActive: Date.now() });
+    } catch (e) {
+      console.error(e);
     } finally {
       setLoading(false);
     }
   };
 
-  const consolidateMemory = async () => {
-    if (!character.memory) return;
-    vibrate(15);
-    setIsConsolidating(true);
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({ 
-        model: "gemini-3-flash-preview", 
-        contents: [{ role: "user", parts: [{ text: `Please reorganize and consolidate the following character legacy/memory log for ${character.name}. Combine similar points, remove redundancies, and ensure it reads as a clear narrative history of their important experiences and relationship with the user. Keep it bulleted and very concise.\n\nCurrent Memory Log:\n${character.memory}` }] }]
-      });
-      if (response.text) {
-        onUpdateCharacter({ memory: response.text });
-        setAppToast?.("Legacy Log Consolidated");
-      }
-    } catch (e) { 
-      console.error(e);
-      setAppToast?.("Consolidation failed.");
-    } finally {
-      setIsConsolidating(false);
-    }
+  const switchVersion = (msgId: string, direction: 'prev' | 'next') => {
+    const msg = session.messages.find((m:any) => m.id === msgId);
+    if (!msg || !msg.versions) return;
+    vibrate(5);
+    const currentIndex = msg.currentVersionIndex ?? 0;
+    let nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
+    if (nextIndex < 0) nextIndex = 0;
+    if (nextIndex >= msg.versions.length) nextIndex = msg.versions.length - 1;
+
+    const updatedMessages = session.messages.map((m: any) => 
+      m.id === msgId ? { ...m, text: m.versions[nextIndex], currentVersionIndex: nextIndex } : m
+    );
+    onUpdateSession({ ...session, messages: updatedMessages });
   };
 
   const handleSend = async (overrideText?: string) => {
@@ -884,7 +939,10 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
     if (!textToSend.trim() || loading) return;
     vibrate();
     const modelMsgId = `msg_${Date.now()}_m`;
-    const newMessages = [...session.messages, { id: `msg_${Date.now()}_u`, role: "user", text: textToSend, personaId: activePersonaId, timestamp: Date.now() }, { id: modelMsgId, role: "model", text: "", timestamp: Date.now(), isGenerating: true }];
+    const newMessages = [...session.messages, 
+      { id: `msg_${Date.now()}_u`, role: "user", text: textToSend, personaId: activePersonaId, timestamp: Date.now() }, 
+      { id: modelMsgId, role: "model", text: "", timestamp: Date.now(), isGenerating: true, versions: [], currentVersionIndex: 0 }
+    ];
     onUpdateSession({ ...session, messages: newMessages, lastActive: Date.now() });
     setInput("");
     setLoading(true);
@@ -892,28 +950,15 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const currentPersona = personas.find((p: any) => p.id === activePersonaId) || personas[0];
       const isHighMaturity = character.maturityLevel === 'mature' || character.maturityLevel === 'unrestricted';
-      
-      const memoryDirective = character.memory 
-        ? `\n\nPERMANENT MEMORY & LORE:\n${character.memory}` 
-        : "";
-
-      const systemPrompt = `Identity: ${character.name}\nLore: ${character.description}${memoryDirective}\n\nSTRICT ROLEPLAY RULES:\n1. Actions in asterisks on new lines (e.g., *Tony sighs softly*).\n2. Dialogue MUST be prefixed with '${character.name}:' and placed on a new line.\n3. ${isHighMaturity ? "Focus on visceral atmospheric detail and descriptive physical narration for deeper roleplay immersion." : ""}\n\nUser Persona Context: ${currentPersona.name} (${currentPersona.bio})`;
+      const memoryDirective = character.memory ? `\n\nPERMANENT MEMORY:\n${character.memory}` : "";
+      const systemPrompt = `Identity: ${character.name}\nLore: ${character.description}${memoryDirective}\n\nSTRICT ROLEPLAY RULES:\n1. Actions in asterisks.\n2. Dialogue MUST be prefixed with '${character.name}:'.\n\nUser Persona Context: ${currentPersona.name} (${currentPersona.bio})`;
       
       const history = newMessages.filter(m => !m.isGenerating).map(m => ({ role: m.role as any, parts: [{ text: m.text }] }));
       
       const response = await ai.models.generateContentStream({ 
         model: "gemini-3-flash-preview", 
         contents: history,
-        config: { 
-          systemInstruction: systemPrompt,
-          temperature: 0.95,
-          safetySettings: [
-            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE }
-          ]
-        }
+        config: { systemInstruction: systemPrompt, temperature: 0.95 }
       });
 
       let fullText = "";
@@ -923,18 +968,32 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
           onUpdateSession({ ...session, messages: newMessages.map(m => m.id === modelMsgId ? { ...m, text: fullText } : m) }); 
         } 
       }
-      onUpdateSession({ ...session, messages: newMessages.map(m => m.id === modelMsgId ? { ...m, text: fullText, isGenerating: false } : m) });
+      
+      // Update with final versions array
+      onUpdateSession({ ...session, messages: newMessages.map(m => m.id === modelMsgId ? { ...m, text: fullText, isGenerating: false, versions: [fullText], currentVersionIndex: 0 } : m) });
+
     } catch (e) { 
       console.error(e);
-      setAppToast?.("System overload. Try again.");
+      setAppToast?.("System overload.");
     } finally { 
       setLoading(false); 
     }
   };
 
+  const characterColorHex = character.color === 'bg-red-600' ? '#ef4444' : 
+                          character.color === 'bg-slate-800' ? '#1e293b' : 
+                          character.color === 'bg-blue-500' ? '#3b82f6' : 
+                          character.color === 'bg-stone-600' ? '#57534e' : '#6366f1';
+
   return (
-    <div className="flex flex-col h-full bg-[#121212] relative">
-      <div className="h-20 flex items-center justify-between px-4 border-b border-white/5 bg-[#121212]/80 backdrop-blur-xl z-20">
+    <div className="flex flex-col h-full bg-[#121212] relative overflow-hidden">
+      {/* Immersive Background Glow */}
+      <div 
+        className="absolute inset-0 pointer-events-none opacity-20 transition-all duration-1000"
+        style={{ background: `radial-gradient(circle at 50% 20%, ${characterColorHex} 0%, transparent 70%)` }}
+      />
+
+      <div className="h-20 flex items-center justify-between px-4 border-b border-white/5 bg-[#121212]/40 backdrop-blur-xl z-20">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="p-2 text-slate-400 hover:text-white transition-colors"><ChevronLeft size={28} /></button>
           <AbstractAvatar name={character.name} colorClass={character.color} size="md" initial={character.initial} />
@@ -943,34 +1002,55 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
               {character.name} 
               <button onClick={() => setShowChatMenu(!showChatMenu)} className="p-1"><MoreVertical size={16} className="text-slate-600" /></button>
             </div>
-            <div className="text-[10px] text-primary font-black uppercase tracking-widest">{loading ? 'Processing...' : 'Ready'}</div>
+            <div className="text-[10px] text-primary font-black uppercase tracking-widest">{loading ? 'Manifesting...' : 'Online'}</div>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-8 no-scrollbar pb-24" ref={scrollRef}>
-        <div className="max-w-4xl mx-auto w-full space-y-8">
+      <div className="flex-1 overflow-y-auto p-4 space-y-8 no-scrollbar pb-24 z-10" ref={scrollRef}>
+        <div className="max-w-4xl mx-auto w-full space-y-10">
           {session.messages.map((msg: any) => (
             <div key={msg.id} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`flex max-w-[85%] gap-3 items-start ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+              <div className={`flex max-w-[90%] gap-3 items-start ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                 {msg.role === 'model' && <AbstractAvatar name={character.name} colorClass={character.color} size="sm" initial={character.initial} className="mt-1" />}
                 <div className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                   <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[9px] font-black text-slate-600 uppercase px-1">
+                   <div className="flex items-center gap-2 mb-1 px-2">
+                      <span className="text-[9px] font-black text-slate-500 uppercase">
                         {msg.role === 'user' ? (personas.find((p: any) => p.id === msg.personaId)?.name || 'You') : character.name}
                       </span>
-                      {isSelectingForEtch && (
-                        <button 
-                          onClick={() => toggleEtchSelection(msg.id)} 
-                          className={`p-1 rounded-md transition-colors ${selectedMsgIds.has(msg.id) ? 'bg-primary/20 text-primary' : 'bg-white/5 text-slate-600'}`}
-                        >
-                          {selectedMsgIds.has(msg.id) ? <CheckSquare size={16}/> : <Square size={16}/>}
-                        </button>
-                      )}
                    </div>
-                   <div className={`px-5 py-4 rounded-[2rem] text-[15px] shadow-lg transition-all ${msg.role === 'user' ? 'bg-primary text-white rounded-tr-none' : (msg.role === 'system' ? 'bg-white/5 border border-white/10 text-slate-500 rounded-2xl italic text-[13px]' : 'bg-[#1a1a1a] text-slate-100 border border-white/5 rounded-tl-none')}`}>
-                      {msg.text.split('\n').map((l:any, i:any) => <p key={i} className="mb-2 last:mb-0 leading-relaxed">{l}</p>)}
+                   
+                   <div className={`group relative px-5 py-4 rounded-[2rem] text-[15.5px] shadow-2xl transition-all ${
+                     msg.role === 'user' ? 'bg-primary text-white rounded-tr-none' : 
+                     (msg.role === 'system' ? 'bg-white/5 border border-white/10 text-slate-500 rounded-2xl italic text-[13px]' : 
+                     'bg-[#1a1a1a]/80 backdrop-blur-md text-slate-100 border border-white/10 rounded-tl-none')}`}>
+                      
+                      {msg.text.split('\n').map((l:any, i:any) => (
+                        <p key={i} className={`mb-2 last:mb-0 leading-relaxed ${l.startsWith('*') ? 'text-slate-400 italic font-medium' : ''}`}>
+                          {l}
+                        </p>
+                      ))}
+
                       {msg.isGenerating && <span className="inline-block w-2 h-4 bg-primary ml-1 animate-pulse rounded-full" />}
+
+                      {/* Tool Overlay for AI Messages */}
+                      {msg.role === 'model' && !msg.isGenerating && (
+                        <div className="absolute -bottom-8 left-0 flex items-center gap-3 px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                           <button onClick={() => playVoice(msg.id, msg.text)} className={`p-1.5 rounded-full hover:bg-white/10 ${isSpeaking === msg.id ? 'text-primary animate-pulse' : 'text-slate-600'}`}>
+                             <Volume2 size={14} />
+                           </button>
+                           <button onClick={() => regenerateMessage(msg.id)} className="p-1.5 rounded-full hover:bg-white/10 text-slate-600">
+                             <RefreshCw size={14} />
+                           </button>
+                           {msg.versions && msg.versions.length > 1 && (
+                             <div className="flex items-center gap-1.5 text-[10px] font-black text-slate-600 uppercase">
+                               <button onClick={() => switchVersion(msg.id, 'prev')} className="hover:text-white"><ChevronLeftCircle size={12}/></button>
+                               <span>{ (msg.currentVersionIndex || 0) + 1 } / { msg.versions.length }</span>
+                               <button onClick={() => switchVersion(msg.id, 'next')} className="hover:text-white"><ChevronRightCircle size={12}/></button>
+                             </div>
+                           )}
+                        </div>
+                      )}
                    </div>
                 </div>
               </div>
@@ -979,27 +1059,22 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
         </div>
       </div>
 
-      {isSelectingForEtch && (
-        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 w-full max-w-md px-4 z-[30] animate-in slide-in-from-bottom-10">
-          <div className="bg-[#1a1a1a] p-4 rounded-3xl flex items-center justify-between shadow-2xl border border-white/10 backdrop-blur-xl">
-            <div className="flex items-center gap-3">
-              <div className="bg-primary/10 p-2 rounded-xl text-primary"><BrainCircuit size={20} /></div>
-              <span className="text-white font-black text-xs uppercase tracking-widest">{selectedMsgIds.size} nodes picked</span>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => {setIsSelectingForEtch(false); setSelectedMsgIds(new Set());}} className="text-slate-500 font-black text-[10px] uppercase px-3 py-2">Abort</button>
-              <button onClick={etchSelectedMessages} disabled={selectedMsgIds.size === 0 || loading} className="bg-primary text-white font-black text-[10px] uppercase px-5 py-2.5 rounded-2xl shadow-lg shadow-primary/20 active:scale-95 transition-all">
-                {loading ? 'Etching...' : 'Etch Memory'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="bg-[#121212]/80 backdrop-blur-2xl border-t border-white/5 p-4 pb-10 z-20">
-        <div className="max-w-4xl mx-auto w-full flex items-end gap-3 bg-[#1a1a1a]/50 p-3 rounded-[2.5rem] border border-white/10 shadow-inner">
-          <textarea value={input} onChange={e => setInput(e.target.value)} placeholder={`Echo as ${personas.find((p: any) => p.id === activePersonaId)?.name}...`} className="flex-1 bg-transparent border-none focus:outline-none text-white text-base py-1.5 px-3 resize-none font-medium leading-relaxed" rows={1} />
-          <button onClick={() => handleSend()} disabled={!input.trim() || loading} className={`p-3.5 rounded-2xl transition-all ${input.trim() ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-white/5 text-slate-700'}`}><Send size={20} /></button>
+      <div className="bg-[#121212]/60 backdrop-blur-3xl border-t border-white/5 p-4 pb-10 z-20 space-y-4">
+        <div className="max-w-4xl mx-auto w-full flex items-end gap-3 bg-[#1a1a1a]/80 p-3 rounded-[2.5rem] border border-white/10 shadow-2xl">
+          <textarea 
+            value={input} 
+            onChange={e => setInput(e.target.value)} 
+            placeholder={`Echo as ${personas.find((p: any) => p.id === activePersonaId)?.name}...`} 
+            className="flex-1 bg-transparent border-none focus:outline-none text-white text-base py-1.5 px-4 resize-none font-medium leading-relaxed placeholder:text-slate-600" 
+            rows={1} 
+          />
+          <button 
+            onClick={() => handleSend()} 
+            disabled={!input.trim() || loading} 
+            className={`p-3.5 rounded-[1.5rem] transition-all ${input.trim() ? 'bg-primary text-white shadow-xl shadow-primary/40 active:scale-95' : 'bg-white/5 text-slate-700'}`}
+          >
+            <Send size={20} />
+          </button>
         </div>
       </div>
 
@@ -1014,21 +1089,17 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
         </div>
       )}
 
-      {/* Persona Switching Sub-Modal */}
+      {/* Persona Switching */}
       {showPersonaShift && (
         <div className="fixed inset-0 z-[120] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="bg-[#1a1a1a] w-full max-w-sm rounded-[3rem] border border-white/10 overflow-hidden shadow-2xl">
               <div className="p-8 border-b border-white/5">
                 <h3 className="text-xl font-black uppercase tracking-tighter text-white">Shift Form</h3>
-                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">Change current persona</p>
               </div>
               <div className="max-h-[300px] overflow-y-auto p-4 space-y-2 no-scrollbar">
                 {personas.map((p: any) => (
-                  <button 
-                    key={p.id} 
-                    onClick={() => { setActivePersonaId(p.id); setShowPersonaShift(false); vibrate(15); }}
-                    className={`w-full p-5 rounded-2xl text-left flex items-center justify-between transition-all ${activePersonaId === p.id ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}
-                  >
+                  <button key={p.id} onClick={() => { setActivePersonaId(p.id); setShowPersonaShift(false); vibrate(15); }}
+                    className={`w-full p-5 rounded-2xl text-left flex items-center justify-between transition-all ${activePersonaId === p.id ? 'bg-primary text-white' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}>
                     <div>
                       <div className="font-black text-sm">{p.name}</div>
                       <div className="text-[10px] opacity-60 truncate max-w-[150px]">{p.bio}</div>
@@ -1037,57 +1108,11 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
                   </button>
                 ))}
               </div>
-              <div className="p-4 border-t border-white/5 bg-[#1a1a1a]/50">
-                <button onClick={() => setShowPersonaShift(false)} className="w-full py-4 text-slate-500 font-black uppercase text-xs tracking-widest">Cancel</button>
+              <div className="p-4 border-t border-white/5">
+                <button onClick={() => setShowPersonaShift(false)} className="w-full py-4 text-slate-500 font-black uppercase text-xs">Cancel</button>
               </div>
            </div>
         </div>
-      )}
-
-      {showMemoryManager && (
-        <div className="fixed inset-0 z-[120] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-6 animate-in fade-in duration-300">
-           <div className="bg-[#1a1a1a] w-full max-w-2xl rounded-[3.5rem] border border-white/10 flex flex-col max-h-[85vh] overflow-hidden shadow-2xl">
-              <div className="p-8 border-b border-white/5 flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-black uppercase text-white tracking-tighter">Legacy Nodes</h3>
-                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">Permanent character knowledge</p>
-                </div>
-                <button onClick={() => setShowMemoryManager(false)} className="p-2 text-slate-500 hover:text-white transition-colors"><X size={24} /></button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-8 space-y-6">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">Persistent Lore</label>
-                  <button 
-                    onClick={consolidateMemory} 
-                    disabled={!character.memory || isConsolidating}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${isConsolidating ? 'bg-primary/50 text-white' : 'bg-primary/10 text-primary hover:bg-primary hover:text-white'}`}
-                  >
-                    {isConsolidating ? <RefreshCw className="animate-spin" size={12}/> : <Sparkles size={12}/>} 
-                    {isConsolidating ? 'Refining...' : 'Consolidate'}
-                  </button>
-                </div>
-                <textarea 
-                  value={character.memory || ""} 
-                  onChange={e => onUpdateCharacter({ memory: e.target.value })} 
-                  placeholder="No persistent narrative nodes found. Use 'Etch Memory' to save important plot points."
-                  className="w-full bg-[#121212] border border-white/5 rounded-3xl p-6 text-white font-mono text-xs leading-relaxed h-[350px] outline-none shadow-inner focus:border-primary/40 transition-all resize-none" 
-                />
-              </div>
-              <div className="p-8 border-t border-white/5 bg-[#1a1a1a]/50 flex gap-4">
-                <button onClick={() => setShowMemoryManager(false)} className="w-full bg-primary text-white font-black py-5 rounded-3xl uppercase text-xs tracking-[0.2em] shadow-lg shadow-primary/20 active:scale-95 transition-all">Commit Legacy</button>
-              </div>
-           </div>
-        </div>
-      )}
-
-      {isViewingSettings && (
-        <CharacterEditor 
-          mode="edit" 
-          initialData={character} 
-          userProfile={userProfile} 
-          onSave={(data) => { onUpdateCharacter(data); setIsViewingSettings(false); vibrate(); }} 
-          onCancel={() => setIsViewingSettings(false)} 
-        />
       )}
     </div>
   );
