@@ -55,7 +55,8 @@ import {
   FileText,
   AlignLeft,
   Brain,
-  Trash
+  Trash,
+  UserPlus
 } from "lucide-react";
 
 // Import character data and type
@@ -156,7 +157,7 @@ const AbstractAvatar = ({
 const DEFAULT_PERSONAS: Persona[] = [
   {
     id: "p_default",
-    name: "Me",
+    name: "Standard Me",
     bio: "Just myself, living in the real world.",
     traits: ["Human", "Authentic"],
     isPrivate: true,
@@ -165,7 +166,6 @@ const DEFAULT_PERSONAS: Persona[] = [
   }
 ];
 
-// Fix: Updated CharacterCard to use React.FC and refined prop types to resolve TypeScript errors when using 'key' prop in map() functions.
 const CharacterCard: React.FC<{ character: Character, onStartChat: (id: string) => void }> = ({ character, onStartChat }) => (
   <div className="bg-[#1a1a1a] rounded-3xl p-4 shadow-xl border border-white/5 flex flex-col gap-3 hover:border-primary/40 transition-all group active:scale-[0.98]">
     <div className="flex items-start justify-between">
@@ -196,7 +196,7 @@ const App = () => {
   });
   const [userProfile, setUserProfile] = useState<UserProfile>(() => {
     const saved = localStorage.getItem('pf_user_profile');
-    return saved ? JSON.parse(saved) : { name: "Genesis User", handle: "@you", avatarInitial: "U" };
+    return saved ? JSON.parse(saved) : { name: "User Zero", handle: "@zero", avatarInitial: "0" };
   });
   const [personas, setPersonas] = useState<Persona[]>(() => {
     const saved = localStorage.getItem('pf_personas');
@@ -210,6 +210,7 @@ const App = () => {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [activePersonaId, setActivePersonaId] = useState<string>("p_default");
   const [createViewMode, setCreateViewMode] = useState<"character" | "persona">("character");
+  const [editingCharacterId, setEditingCharacterId] = useState<string | null>(null);
 
   useEffect(() => { localStorage.setItem('pf_characters', JSON.stringify(characters)); }, [characters]);
   useEffect(() => { localStorage.setItem('pf_personas', JSON.stringify(personas)); }, [personas]);
@@ -280,14 +281,33 @@ const App = () => {
       }
       setActiveChatId(null); 
     }
+    
+    // Character Editor Modal (Full Page)
+    if (editingCharacterId) {
+       const char = characters.find(c => c.id === editingCharacterId);
+       if (char) {
+         return <CharacterEditor 
+           mode="edit" 
+           initialData={char} 
+           userProfile={userProfile} 
+           onSave={(data) => {
+             setCharacters(prev => prev.map(c => c.id === editingCharacterId ? { ...c, ...data } : c));
+             setEditingCharacterId(null);
+             setAppToast("Core Updated");
+           }} 
+           onCancel={() => setEditingCharacterId(null)} 
+         />;
+       }
+    }
+
     switch (activeTab) {
       case "for_you": return <ForYouView characters={characters} onStartChat={startChat} />;
       case "featured": return <FeaturedView characters={characters} onStartChat={startChat} />;
       case "explore": return <ExploreView characters={characters} onStartChat={startChat} />;
       case "chat": return <ChatListView chats={chats} characters={characters} onOpenChat={setActiveChatId} onDeleteChat={(id: string) => setChats(chats.filter(c => c.id !== id))} />;
       case "create": return <CreateView initialMode={createViewMode} userProfile={userProfile} onCreateCharacter={(c: any) => { setCharacters([c, ...characters]); setAppToast("Identity Manifested"); setActiveTab("library"); }} onCreatePersona={(p: any) => { setPersonas([p, ...personas]); setAppToast("Persona Formed"); setActiveTab("profile"); }} onBack={() => setActiveTab('for_you')} />;
-      case "library": return <LibraryView characters={characters} personas={personas} userProfile={userProfile} onEditCharacter={(c: Character) => { setCreateViewMode("character"); setActiveTab("create"); }} />;
-      case "profile": return <ProfileView personas={personas} activePersonaId={activePersonaId} setActivePersonaId={(id: string) => { setActivePersonaId(id); const p = personas.find(pers => pers.id === id); if (p) setAppToast(`Manifested: ${p.name}`); }} chats={chats} updatePersona={(p: any) => setPersonas(prev => prev.map(o => o.id === p.id ? p : o))} userProfile={userProfile} setUserProfile={setUserProfile} onDeletePersona={(id: string) => setPersonas(personas.filter(p => p.id !== id))} />;
+      case "library": return <LibraryView characters={characters} personas={personas} userProfile={userProfile} onEditCharacter={(c: Character) => setEditingCharacterId(c.id)} />;
+      case "profile": return <ProfileView personas={personas} activePersonaId={activePersonaId} setActivePersonaId={(id: string) => { setActivePersonaId(id); const p = personas.find(pers => pers.id === id); if (p) setAppToast(`Manifested: ${p.name}`); }} chats={chats} updatePersona={(p: Persona) => setPersonas(prev => prev.map(o => o.id === p.id ? p : o))} userProfile={userProfile} setUserProfile={setUserProfile} onDeletePersona={(id: string) => setPersonas(personas.filter(p => p.id !== id))} />;
       case "settings": return <SettingsView onClearData={clearAllData} userProfile={userProfile} />;
       default: return <ForYouView characters={characters} onStartChat={startChat} />;
     }
@@ -295,7 +315,7 @@ const App = () => {
 
   return (
     <div className="flex flex-col h-screen bg-[#121212] text-[#e0e0e0] font-sans overflow-hidden">
-      {!activeChatId && (
+      {!activeChatId && !editingCharacterId && (
         <div className="h-16 px-6 border-b border-white/5 flex items-center justify-between bg-[#121212]/80 backdrop-blur-xl z-50">
           <div className="flex items-center gap-3">
              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center font-black text-white shadow-lg shadow-primary/20">M</div>
@@ -313,7 +333,7 @@ const App = () => {
         </div>
       )}
       
-      {!activeChatId && (
+      {!activeChatId && !editingCharacterId && (
         <div className="h-20 bg-[#1a1a1a]/90 backdrop-blur-md border-t border-white/5 flex-none z-50">
           <div className="flex items-center justify-center h-full">
             <div className="flex items-center h-full overflow-x-auto no-scrollbar px-6 space-x-1">
@@ -341,7 +361,6 @@ const NavItem = ({ id, label, icon: Icon, active, set }: any) => (
   </button>
 );
 
-// Fix: Specified prop types for ForYouView to ensure compatibility with CharacterCard requirements.
 const ForYouView = ({ characters, onStartChat }: { characters: Character[], onStartChat: (id: string) => void }) => (
   <div className="max-w-6xl mx-auto p-4 pb-24 space-y-10">
     <header className="mt-4 mb-2">
@@ -359,7 +378,6 @@ const ForYouView = ({ characters, onStartChat }: { characters: Character[], onSt
   </div>
 );
 
-// Fix: Specified prop types for FeaturedView to ensure compatibility with CharacterCard requirements.
 const FeaturedView = ({ characters, onStartChat }: { characters: Character[], onStartChat: (id: string) => void }) => (
   <div className="max-w-6xl mx-auto p-4 pb-24">
     <h1 className="text-3xl font-black mb-8 uppercase tracking-tighter text-white">Originals</h1>
@@ -367,7 +385,6 @@ const FeaturedView = ({ characters, onStartChat }: { characters: Character[], on
   </div>
 );
 
-// Fix: Specified prop types for ExploreView to ensure compatibility with CharacterCard requirements.
 const ExploreView = ({ characters, onStartChat }: { characters: Character[], onStartChat: (id: string) => void }) => {
   const [search, setSearch] = useState("");
   const filtered = characters.filter((c: Character) => (search === "" || c.name.toLowerCase().includes(search.toLowerCase()) || c.tags.some(t => t.toLowerCase().includes(search.toLowerCase()))));
@@ -513,33 +530,64 @@ const CreateView = ({ onCreateCharacter, onCreatePersona, onBack, initialMode, u
   const [personaName, setPersonaName] = useState("");
   const [personaBio, setPersonaBio] = useState("");
 
-  if (mode === 'character') {
-    return <CharacterEditor mode="create" userProfile={userProfile} initialData={{ creator: userProfile.handle }} onCancel={onBack} onSave={(data) => onCreateCharacter({ id: `char_${Date.now()}`, initial: data.name![0].toUpperCase(), color: 'bg-indigo-600', creator: userProfile.handle, engagement: "0", tags: [], ...data })} />;
-  }
-
   return (
-    <div className="flex flex-col h-full bg-[#121212] p-6 animate-in fade-in duration-300">
-      <div className="flex items-center gap-4 mb-10">
-        <button onClick={onBack} className="p-2 text-slate-500 hover:text-white"><ChevronLeft size={24}/></button>
-        <h1 className="text-2xl font-black uppercase tracking-tighter">New Persona</h1>
+    <div className="flex flex-col h-full bg-[#121212] animate-in fade-in duration-300">
+      <div className="flex items-center gap-4 px-6 pt-6 mb-4">
+        <h1 className="text-2xl font-black uppercase tracking-tighter">Creation Lab</h1>
       </div>
-      <div className="space-y-6 max-w-lg mx-auto w-full">
-        <div className="space-y-2">
-           <label className="text-[9px] font-black text-slate-500 uppercase ml-3">Persona Name</label>
-           <input value={personaName} onChange={e => setPersonaName(e.target.value)} placeholder="Who are you in this chat?" className="w-full bg-[#1a1a1a] border border-white/5 p-4 rounded-2xl text-white font-bold outline-none" />
-        </div>
-        <div className="space-y-2">
-           <label className="text-[9px] font-black text-slate-500 uppercase ml-3">Bio / Background</label>
-           <textarea value={personaBio} onChange={e => setPersonaBio(e.target.value)} placeholder="Describe your background, appearance, or role..." className="w-full bg-[#1a1a1a] border border-white/5 p-4 rounded-2xl text-white h-40 outline-none resize-none" />
-        </div>
-        <button onClick={() => { vibrate(); onCreatePersona({ id: `p_${Date.now()}`, name: personaName, bio: personaBio, traits: [], isPrivate: true, avatarColor: "bg-blue-600" }); }} disabled={!personaName.trim()} className="w-full bg-primary text-white font-black py-5 rounded-2xl uppercase tracking-widest shadow-xl shadow-primary/20 disabled:opacity-30 disabled:shadow-none transition-all">Form Persona</button>
+
+      <div className="flex bg-[#1a1a1a] p-1 rounded-2xl mx-6 mb-8 border border-white/10 shadow-inner">
+        <button onClick={() => setMode("character")} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${mode === 'character' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-500'}`}>Character</button>
+        <button onClick={() => setMode("persona")} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${mode === 'persona' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'text-slate-500'}`}>Persona</button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto no-scrollbar">
+        {mode === 'character' ? (
+          <CharacterEditor 
+            mode="create" 
+            userProfile={userProfile} 
+            initialData={{ creator: userProfile.handle }} 
+            onCancel={onBack} 
+            onSave={(data) => onCreateCharacter({ id: `char_${Date.now()}`, initial: data.name![0].toUpperCase(), color: 'bg-indigo-600', creator: userProfile.handle, engagement: "0", tags: [], ...data })} 
+          />
+        ) : (
+          <div className="px-6 pb-24 space-y-6 max-w-lg mx-auto w-full">
+            <div className="space-y-2">
+               <label className="text-[9px] font-black text-slate-500 uppercase ml-3">Persona Name</label>
+               <input value={personaName} onChange={e => setPersonaName(e.target.value)} placeholder="Who are you in this chat?" className="w-full bg-[#1a1a1a] border border-white/5 p-4 rounded-2xl text-white font-bold outline-none focus:border-primary/50 transition-all" />
+            </div>
+            <div className="space-y-2">
+               <label className="text-[9px] font-black text-slate-500 uppercase ml-3">Bio / Background</label>
+               <textarea value={personaBio} onChange={e => setPersonaBio(e.target.value)} placeholder="Describe your background, appearance, or role..." className="w-full bg-[#1a1a1a] border border-white/5 p-4 rounded-2xl text-white h-40 outline-none resize-none focus:border-primary/50 transition-all" />
+            </div>
+            <button 
+              onClick={() => { 
+                vibrate(); 
+                onCreatePersona({ 
+                  id: `p_${Date.now()}`, 
+                  name: personaName, 
+                  bio: personaBio, 
+                  traits: [], 
+                  isPrivate: true, 
+                  avatarColor: "bg-blue-600" 
+                }); 
+                setPersonaName("");
+                setPersonaBio("");
+              }} 
+              disabled={!personaName.trim()} 
+              className="w-full bg-primary text-white font-black py-5 rounded-2xl uppercase tracking-widest shadow-xl shadow-primary/20 disabled:opacity-30 disabled:shadow-none transition-all"
+            >
+              Form Persona
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
 const LibraryView = ({ characters, personas, userProfile, onEditCharacter }: any) => (
-  <div className="p-6 max-w-4xl mx-auto w-full">
+  <div className="p-6 max-w-4xl mx-auto w-full pb-24">
     <h1 className="text-3xl font-black mb-10 uppercase tracking-tighter">My Library</h1>
     
     <div className="space-y-10">
@@ -555,7 +603,7 @@ const LibraryView = ({ characters, personas, userProfile, onEditCharacter }: any
                   <div className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">{c.visibility}</div>
                 </div>
               </div>
-              <button onClick={() => onEditCharacter(c)} className="p-3 text-slate-500 hover:text-white"><Pencil size={18} /></button>
+              <button onClick={() => onEditCharacter(c)} className="p-3 text-slate-500 hover:text-white transition-colors"><Pencil size={18} /></button>
             </div>
           ))}
           {characters.filter((c:any) => c.creator === userProfile.handle).length === 0 && (
@@ -582,10 +630,11 @@ const LibraryView = ({ characters, personas, userProfile, onEditCharacter }: any
   </div>
 );
 
-const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfile, setUserProfile, onDeletePersona }: any) => {
+const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfile, setUserProfile, onDeletePersona, updatePersona }: any) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(userProfile.name);
   const [editedHandle, setEditedHandle] = useState(userProfile.handle);
+  const [editingPersona, setEditingPersona] = useState<Persona | null>(null);
 
   const saveProfile = () => {
     setUserProfile({ ...userProfile, name: editedName, handle: editedHandle, avatarInitial: editedName[0].toUpperCase() });
@@ -593,19 +642,30 @@ const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfil
     vibrate();
   };
 
+  const savePersona = () => {
+    if (editingPersona) {
+      updatePersona(editingPersona);
+      setEditingPersona(null);
+      vibrate();
+    }
+  };
+
   return (
     <div className="p-6 max-w-lg mx-auto w-full pb-32">
       <div className="flex flex-col items-center mb-12">
         <div className="relative group">
           <div className="w-24 h-24 bg-primary rounded-[2.5rem] flex items-center justify-center text-4xl font-black mb-4 shadow-2xl shadow-primary/30 group-hover:scale-105 transition-transform">{userProfile.avatarInitial}</div>
-          <button onClick={() => setIsEditing(!isEditing)} className="absolute bottom-4 right-0 bg-[#1a1a1a] border border-white/10 p-2 rounded-full shadow-xl hover:bg-white/10 text-primary"><Pencil size={14} /></button>
+          <button onClick={() => setIsEditing(!isEditing)} className="absolute bottom-4 right-0 bg-[#1a1a1a] border border-white/10 p-2 rounded-full shadow-xl hover:bg-white/10 text-primary transition-all"><Pencil size={14} /></button>
         </div>
         
         {isEditing ? (
           <div className="w-full space-y-4 mt-4 animate-in slide-in-from-top-4">
-             <input value={editedName} onChange={e => setEditedName(e.target.value)} placeholder="Display Name" className="w-full bg-[#1a1a1a] border border-white/5 p-4 rounded-2xl text-center font-black outline-none focus:border-primary/40" />
-             <input value={editedHandle} onChange={e => setEditedHandle(e.target.value)} placeholder="@handle" className="w-full bg-[#1a1a1a] border border-white/5 p-4 rounded-2xl text-center font-bold text-slate-500 outline-none focus:border-primary/40" />
-             <button onClick={saveProfile} className="w-full bg-primary text-white font-black py-4 rounded-2xl uppercase tracking-widest text-xs">Update Profile</button>
+             <input value={editedName} onChange={e => setEditedName(e.target.value)} placeholder="Display Name" className="w-full bg-[#1a1a1a] border border-white/5 p-4 rounded-2xl text-center font-black outline-none focus:border-primary/40 transition-all" />
+             <input value={editedHandle} onChange={e => setEditedHandle(e.target.value)} placeholder="@handle" className="w-full bg-[#1a1a1a] border border-white/5 p-4 rounded-2xl text-center font-bold text-slate-500 outline-none focus:border-primary/40 transition-all" />
+             <div className="flex gap-2">
+               <button onClick={() => setIsEditing(false)} className="flex-1 bg-white/5 text-slate-400 font-black py-4 rounded-2xl uppercase tracking-widest text-xs">Cancel</button>
+               <button onClick={saveProfile} className="flex-1 bg-primary text-white font-black py-4 rounded-2xl uppercase tracking-widest text-xs shadow-lg shadow-primary/20">Save</button>
+             </div>
           </div>
         ) : (
           <div className="text-center">
@@ -618,93 +678,139 @@ const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfil
       <div className="space-y-8">
         <section>
           <div className="flex items-center justify-between mb-4 px-1">
-            <h2 className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Manifested Personas</h2>
+            <h2 className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Active Manifestations</h2>
             <div className="text-[10px] font-black text-primary uppercase">{personas.length} total</div>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-4">
             {personas.map((p: any) => (
-              <div key={p.id} className={`group flex items-center gap-2 p-1 transition-all`}>
+              <div key={p.id} className="relative group">
                 <button 
                   onClick={() => setActivePersonaId(p.id)} 
-                  className={`flex-1 p-5 rounded-[2rem] text-left transition-all border-2 relative overflow-hidden ${activePersonaId === p.id ? 'bg-primary border-primary text-white shadow-xl shadow-primary/20' : 'bg-[#1a1a1a] border-white/5 text-slate-400 hover:border-white/10'}`}
+                  className={`w-full p-5 rounded-[2rem] text-left transition-all border-2 relative overflow-hidden ${activePersonaId === p.id ? 'bg-primary border-primary text-white shadow-xl shadow-primary/20' : 'bg-[#1a1a1a] border-white/5 text-slate-400 hover:border-white/10'}`}
                 >
                   <div className="relative z-10 flex items-center justify-between">
                     <div>
                       <div className="font-black text-lg">{p.name}</div>
                       <div className="text-xs opacity-60 truncate max-w-[200px] leading-relaxed">{p.bio}</div>
                     </div>
-                    {activePersonaId === p.id && <Check size={20} className="text-white" />}
+                    <div className="flex items-center gap-2">
+                      {activePersonaId === p.id && <Check size={20} className="text-white" />}
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setEditingPersona(p); vibrate(); }}
+                        className={`p-2 rounded-full transition-colors ${activePersonaId === p.id ? 'hover:bg-white/20' : 'hover:bg-white/10'}`}
+                      >
+                        <Edit3 size={16} />
+                      </button>
+                    </div>
                   </div>
                 </button>
-                {p.id !== 'p_default' && (
-                  <button onClick={() => onDeletePersona(p.id)} className="p-4 text-slate-700 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={20} /></button>
+                {p.id !== 'p_default' && !isEditing && (
+                  <button onClick={() => onDeletePersona(p.id)} className="absolute -right-12 top-1/2 -translate-y-1/2 p-4 text-slate-700 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={20} /></button>
                 )}
               </div>
             ))}
           </div>
         </section>
       </div>
+
+      {/* Persona Edit Modal */}
+      {editingPersona && (
+        <div className="fixed inset-0 z-[120] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300">
+           <div className="bg-[#1a1a1a] w-full max-w-md rounded-[3rem] border border-white/10 p-8 space-y-6 shadow-2xl">
+              <h3 className="text-xl font-black uppercase tracking-tighter text-white">Refine Persona</h3>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black text-slate-600 uppercase ml-2">Name</label>
+                  <input value={editingPersona.name} onChange={e => setEditingPersona({...editingPersona, name: e.target.value})} className="w-full bg-[#121212] border border-white/5 p-4 rounded-2xl text-white font-bold outline-none" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black text-slate-600 uppercase ml-2">Bio / Memory</label>
+                  <textarea value={editingPersona.bio} onChange={e => setEditingPersona({...editingPersona, bio: e.target.value})} className="w-full bg-[#121212] border border-white/5 p-4 rounded-2xl text-white h-32 outline-none resize-none" />
+                </div>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button onClick={() => setEditingPersona(null)} className="flex-1 py-4 text-slate-500 font-black uppercase text-xs tracking-widest">Cancel</button>
+                <button onClick={savePersona} className="flex-1 bg-primary text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-primary/20">Update</button>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 };
 
-const SettingsView = ({ onClearData, userProfile }: any) => (
-  <div className="p-6 max-w-lg mx-auto w-full">
-    <h1 className="text-3xl font-black mb-10 uppercase tracking-tighter">Settings</h1>
-    
-    <div className="space-y-10">
-      <section className="space-y-4">
-        <h2 className="text-[10px] font-black text-slate-600 uppercase tracking-widest px-1">Account & Safety</h2>
-        <div className="bg-[#1a1a1a] rounded-[2rem] overflow-hidden border border-white/5">
-          <div className="p-6 flex items-center justify-between border-b border-white/5">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-blue-500/10 text-blue-500 rounded-2xl"><Shield size={20}/></div>
-              <div className="font-black text-sm">Safe Content Filtering</div>
-            </div>
-            <div className="w-12 h-6 bg-primary rounded-full relative"><div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm"></div></div>
-          </div>
-          <div className="p-6 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-purple-500/10 text-purple-500 rounded-2xl"><Lock size={20}/></div>
-              <div className="font-black text-sm">Incognito Mode</div>
-            </div>
-            <div className="w-12 h-6 bg-slate-800 rounded-full relative"><div className="absolute left-1 top-1 w-4 h-4 bg-slate-400 rounded-full shadow-sm"></div></div>
-          </div>
-        </div>
-      </section>
+const SettingsView = ({ onClearData, userProfile }: any) => {
+  const [analytics, setAnalytics] = useState(true);
+  const [haptics, setHaptics] = useState(true);
 
-      <section className="space-y-4">
-        <h2 className="text-[10px] font-black text-slate-600 uppercase tracking-widest px-1">Data Management</h2>
-        <div className="bg-[#1a1a1a] rounded-[2rem] overflow-hidden border border-white/5">
-          <button onClick={onClearData} className="w-full p-6 flex items-center gap-4 hover:bg-red-500/10 transition-colors text-left border-b border-white/5 group">
-            <div className="p-3 bg-red-500/10 text-red-500 rounded-2xl group-hover:bg-red-500 group-hover:text-white transition-all"><RefreshCw size={20}/></div>
-            <div>
-              <div className="font-black text-sm text-red-500">Reset All Systems</div>
-              <div className="text-[10px] font-bold text-slate-600 uppercase mt-0.5">Wipe all chats and identities</div>
+  return (
+    <div className="p-6 max-w-lg mx-auto w-full pb-32">
+      <h1 className="text-3xl font-black mb-10 uppercase tracking-tighter">System Config</h1>
+      
+      <div className="space-y-10">
+        <section className="space-y-4">
+          <h2 className="text-[10px] font-black text-slate-600 uppercase tracking-widest px-1">Neural Settings</h2>
+          <div className="bg-[#1a1a1a] rounded-[2rem] overflow-hidden border border-white/5">
+            <div className="p-6 flex items-center justify-between border-b border-white/5">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-blue-500/10 text-blue-500 rounded-2xl"><Shield size={20}/></div>
+                <div>
+                  <div className="font-black text-sm">Strict Narrative Check</div>
+                  <div className="text-[9px] text-slate-500 font-bold uppercase">Prevents break of character</div>
+                </div>
+              </div>
+              <button onClick={() => setAnalytics(!analytics)} className={`w-12 h-6 rounded-full relative transition-colors ${analytics ? 'bg-primary' : 'bg-slate-700'}`}>
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${analytics ? 'right-1' : 'left-1'}`}></div>
+              </button>
             </div>
-          </button>
-          <div className="p-6 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-stone-500/10 text-stone-500 rounded-2xl"><Library size={20}/></div>
-              <div className="font-black text-sm">Offline Cache</div>
+            <div className="p-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-indigo-500/10 text-indigo-500 rounded-2xl"><Zap size={20}/></div>
+                <div>
+                  <div className="font-black text-sm">Haptic Resonance</div>
+                  <div className="text-[9px] text-slate-500 font-bold uppercase">Physical feedback on echos</div>
+                </div>
+              </div>
+              <button onClick={() => setHaptics(!haptics)} className={`w-12 h-6 rounded-full relative transition-colors ${haptics ? 'bg-primary' : 'bg-slate-700'}`}>
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${haptics ? 'right-1' : 'left-1'}`}></div>
+              </button>
             </div>
-            <span className="text-[10px] font-black text-slate-500">12.4 MB</span>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="space-y-4 text-center pb-10">
-        <div className="w-12 h-12 bg-primary/20 text-primary mx-auto rounded-2xl flex items-center justify-center font-black text-xl mb-4">M</div>
-        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Moonai v2.4.0 (Build: Legacy-Node)</p>
-        <p className="text-xs text-slate-600 px-10 italic">"Whispers from the digital abyss."</p>
-      </section>
+        <section className="space-y-4">
+          <h2 className="text-[10px] font-black text-slate-600 uppercase tracking-widest px-1">Memory Matrix</h2>
+          <div className="bg-[#1a1a1a] rounded-[2rem] overflow-hidden border border-white/5">
+            <button onClick={onClearData} className="w-full p-6 flex items-center gap-4 hover:bg-red-500/10 transition-colors text-left border-b border-white/5 group">
+              <div className="p-3 bg-red-500/10 text-red-500 rounded-2xl group-hover:bg-red-500 group-hover:text-white transition-all"><RefreshCw size={20}/></div>
+              <div>
+                <div className="font-black text-sm text-red-500">Reset Neural Paths</div>
+                <div className="text-[10px] font-bold text-slate-600 uppercase mt-0.5">Clears all localized persona data</div>
+              </div>
+            </button>
+            <div className="p-6 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-stone-500/10 text-stone-500 rounded-2xl"><Library size={20}/></div>
+                <div className="font-black text-sm">Identity Persistence</div>
+              </div>
+              <span className="text-[10px] font-black text-slate-500">Enabled</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="space-y-4 text-center pb-10">
+          <div className="w-12 h-12 bg-primary/20 text-primary mx-auto rounded-2xl flex items-center justify-center font-black text-xl mb-4">M</div>
+          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Moonai v2.5.1 (Persona Hub)</p>
+          <p className="text-xs text-slate-600 px-10 italic">"The self is but a variable in the grand equation."</p>
+        </section>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 // --- MAIN CHAT INTERFACE & MEMORY MANAGEMENT ---
 
-const ChatInterface = ({ session, character, personas, activePersonaId, onBack, onUpdateSession, onUpdateCharacter, userProfile, setAppToast }: any) => {
+const ChatInterface = ({ session, character, personas, activePersonaId, setActivePersonaId, onBack, onUpdateSession, onUpdateCharacter, userProfile, setAppToast }: any) => {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -714,6 +820,7 @@ const ChatInterface = ({ session, character, personas, activePersonaId, onBack, 
   const [showMemoryManager, setShowMemoryManager] = useState(false);
   const [isConsolidating, setIsConsolidating] = useState(false);
   const [isViewingSettings, setIsViewingSettings] = useState(false);
+  const [showPersonaShift, setShowPersonaShift] = useState(false);
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [session.messages, loading]);
 
@@ -849,7 +956,9 @@ const ChatInterface = ({ session, character, personas, activePersonaId, onBack, 
                 {msg.role === 'model' && <AbstractAvatar name={character.name} colorClass={character.color} size="sm" initial={character.initial} className="mt-1" />}
                 <div className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[9px] font-black text-slate-600 uppercase px-1">{msg.role === 'user' ? 'You' : character.name}</span>
+                      <span className="text-[9px] font-black text-slate-600 uppercase px-1">
+                        {msg.role === 'user' ? (personas.find((p: any) => p.id === msg.personaId)?.name || 'You') : character.name}
+                      </span>
                       {isSelectingForEtch && (
                         <button 
                           onClick={() => toggleEtchSelection(msg.id)} 
@@ -859,7 +968,7 @@ const ChatInterface = ({ session, character, personas, activePersonaId, onBack, 
                         </button>
                       )}
                    </div>
-                   <div className={`px-5 py-4 rounded-[2rem] text-[15px] shadow-lg transition-all ${msg.role === 'user' ? 'bg-primary text-white rounded-tr-none' : 'bg-[#1a1a1a] text-slate-100 border border-white/5 rounded-tl-none'}`}>
+                   <div className={`px-5 py-4 rounded-[2rem] text-[15px] shadow-lg transition-all ${msg.role === 'user' ? 'bg-primary text-white rounded-tr-none' : (msg.role === 'system' ? 'bg-white/5 border border-white/10 text-slate-500 rounded-2xl italic text-[13px]' : 'bg-[#1a1a1a] text-slate-100 border border-white/5 rounded-tl-none')}`}>
                       {msg.text.split('\n').map((l:any, i:any) => <p key={i} className="mb-2 last:mb-0 leading-relaxed">{l}</p>)}
                       {msg.isGenerating && <span className="inline-block w-2 h-4 bg-primary ml-1 animate-pulse rounded-full" />}
                    </div>
@@ -889,23 +998,54 @@ const ChatInterface = ({ session, character, personas, activePersonaId, onBack, 
 
       <div className="bg-[#121212]/80 backdrop-blur-2xl border-t border-white/5 p-4 pb-10 z-20">
         <div className="max-w-4xl mx-auto w-full flex items-end gap-3 bg-[#1a1a1a]/50 p-3 rounded-[2.5rem] border border-white/10 shadow-inner">
-          <textarea value={input} onChange={e => setInput(e.target.value)} placeholder={`Echo as persona...`} className="flex-1 bg-transparent border-none focus:outline-none text-white text-base py-1.5 px-3 resize-none font-medium leading-relaxed" rows={1} />
+          <textarea value={input} onChange={e => setInput(e.target.value)} placeholder={`Echo as ${personas.find((p: any) => p.id === activePersonaId)?.name}...`} className="flex-1 bg-transparent border-none focus:outline-none text-white text-base py-1.5 px-3 resize-none font-medium leading-relaxed" rows={1} />
           <button onClick={() => handleSend()} disabled={!input.trim() || loading} className={`p-3.5 rounded-2xl transition-all ${input.trim() ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-white/5 text-slate-700'}`}><Send size={20} /></button>
         </div>
       </div>
 
       {showChatMenu && (
-        <div className="fixed inset-0 z-30 flex items-start justify-end p-6 pt-24" onClick={() => setShowChatMenu(false)}>
+        <div className="fixed inset-0 z-[110] flex items-start justify-end p-6 pt-24" onClick={() => setShowChatMenu(false)}>
             <div className="w-64 bg-[#1a1a1a] border border-white/10 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                <button onClick={() => { setShowPersonaShift(true); setShowChatMenu(false); vibrate(); }} className="w-full text-left px-6 py-5 hover:bg-white/5 flex items-center gap-4 text-xs font-black uppercase border-b border-white/5 text-primary"><UserPlus size={18} /> Manifestation Shift</button>
                 <button onClick={() => { setIsViewingSettings(true); setShowChatMenu(false); vibrate(); }} className="w-full text-left px-6 py-5 hover:bg-white/5 flex items-center gap-4 text-xs font-black uppercase border-b border-white/5 text-white"><FileText size={18} /> Identity Core</button>
                 <button onClick={() => { setShowMemoryManager(true); setShowChatMenu(false); vibrate(); }} className="w-full text-left px-6 py-5 hover:bg-white/5 flex items-center gap-4 text-xs font-black uppercase border-b border-white/5 text-white"><Brain size={18} /> Legacy Narrative</button>
-                <button onClick={() => { setIsSelectingForEtch(true); setShowChatMenu(false); vibrate(); }} className="w-full text-left px-6 py-5 hover:bg-white/5 flex items-center gap-4 text-xs font-black uppercase border-b border-white/5 text-white"><BrainCircuit size={18} /> Etch Memory</button>
+                <button onClick={() => { setIsSelectingForEtch(true); setShowChatMenu(false); vibrate(); }} className="w-full text-left px-6 py-5 hover:bg-white/5 flex items-center gap-4 text-xs font-black uppercase border-white/5 text-white"><BrainCircuit size={18} /> Etch Memory</button>
             </div>
         </div>
       )}
 
+      {/* Persona Switching Sub-Modal */}
+      {showPersonaShift && (
+        <div className="fixed inset-0 z-[120] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300">
+           <div className="bg-[#1a1a1a] w-full max-w-sm rounded-[3rem] border border-white/10 overflow-hidden shadow-2xl">
+              <div className="p-8 border-b border-white/5">
+                <h3 className="text-xl font-black uppercase tracking-tighter text-white">Shift Form</h3>
+                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">Change current persona</p>
+              </div>
+              <div className="max-h-[300px] overflow-y-auto p-4 space-y-2 no-scrollbar">
+                {personas.map((p: any) => (
+                  <button 
+                    key={p.id} 
+                    onClick={() => { setActivePersonaId(p.id); setShowPersonaShift(false); vibrate(15); }}
+                    className={`w-full p-5 rounded-2xl text-left flex items-center justify-between transition-all ${activePersonaId === p.id ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-white/5 text-slate-400 hover:bg-white/10'}`}
+                  >
+                    <div>
+                      <div className="font-black text-sm">{p.name}</div>
+                      <div className="text-[10px] opacity-60 truncate max-w-[150px]">{p.bio}</div>
+                    </div>
+                    {activePersonaId === p.id && <Check size={16} />}
+                  </button>
+                ))}
+              </div>
+              <div className="p-4 border-t border-white/5 bg-[#1a1a1a]/50">
+                <button onClick={() => setShowPersonaShift(false)} className="w-full py-4 text-slate-500 font-black uppercase text-xs tracking-widest">Cancel</button>
+              </div>
+           </div>
+        </div>
+      )}
+
       {showMemoryManager && (
-        <div className="fixed inset-0 z-[110] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-6 animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[120] bg-black/95 backdrop-blur-3xl flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="bg-[#1a1a1a] w-full max-w-2xl rounded-[3.5rem] border border-white/10 flex flex-col max-h-[85vh] overflow-hidden shadow-2xl">
               <div className="p-8 border-b border-white/5 flex items-center justify-between">
                 <div>
@@ -932,7 +1072,6 @@ const ChatInterface = ({ session, character, personas, activePersonaId, onBack, 
                   placeholder="No persistent narrative nodes found. Use 'Etch Memory' to save important plot points."
                   className="w-full bg-[#121212] border border-white/5 rounded-3xl p-6 text-white font-mono text-xs leading-relaxed h-[350px] outline-none shadow-inner focus:border-primary/40 transition-all resize-none" 
                 />
-                <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest px-1">Memory nodes are injected into every turn. Consolidate frequently to optimize context.</p>
               </div>
               <div className="p-8 border-t border-white/5 bg-[#1a1a1a]/50 flex gap-4">
                 <button onClick={() => setShowMemoryManager(false)} className="w-full bg-primary text-white font-black py-5 rounded-3xl uppercase text-xs tracking-[0.2em] shadow-lg shadow-primary/20 active:scale-95 transition-all">Commit Legacy</button>
