@@ -1,0 +1,7 @@
+{
+  "name": "Moonai",
+  "description": "A mobile-first, unrestricted character chat application focused on deep persona play and role-shifting capabilities.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
