@@ -350,6 +350,13 @@ const App = () => {
     }
   };
 
+  const openPersonaCreator = () => {
+    vibrate();
+    setCreateViewMode("persona");
+    setActiveTab("create");
+    setActiveChatId(null);
+  };
+
   const renderTabContent = () => {
     if (activeChatId) {
       const session = chats.find(c => c.id === activeChatId);
@@ -381,7 +388,7 @@ const App = () => {
             }}
             onUpdateCharacter={(updates: Partial<Character>) => { setCharacters(prev => prev.map(c => c.id === character.id ? { ...c, ...updates } : c)); }}
             onDeleteChat={(id: string) => { setChats(prev => prev.filter(c => c.id !== id)); setActiveChatId(null); }}
-            onCreatePersona={() => { setCreateViewMode("persona"); setActiveChatId(null); setActiveTab("create"); }}
+            onCreatePersona={openPersonaCreator}
           />
         );
       }
@@ -414,7 +421,7 @@ const App = () => {
       case "chat": return <ChatListView chats={chats} characters={characters} onOpenChat={setActiveChatId} onDeleteChat={(id: string) => setChats(chats.filter(c => c.id !== id))} />;
       case "create": return <CreateView initialMode={createViewMode} userProfile={userProfile} onAddCharacters={(newChars: Character[]) => setCharacters([...newChars, ...characters])} onCreateCharacter={(c: any) => { setCharacters([c, ...characters]); setAppToast("Identity Manifested"); setActiveTab("library"); }} onCreatePersona={(p: any) => { setPersonas([p, ...personas]); setAppToast("Persona Formed"); setActiveTab("profile"); }} onBack={() => setActiveTab('for_you')} />;
       case "library": return <LibraryView characters={characters} personas={personas} userProfile={userProfile} onEditCharacter={(c: Character) => setEditingCharacterId(c.id)} />;
-      case "profile": return <ProfileView personas={personas} activePersonaId={activePersonaId} setActivePersonaId={(id: string) => { setActivePersonaId(id); const p = personas.find(pers => pers.id === id); if (p) setAppToast(`Manifested: ${p.name}`); }} chats={chats} updatePersona={(p: Persona) => setPersonas(prev => prev.map(o => o.id === p.id ? p : o))} userProfile={userProfile} setUserProfile={setUserProfile} onDeletePersona={(id: string) => setPersonas(personas.filter(p => p.id !== id))} />;
+      case "profile": return <ProfileView personas={personas} activePersonaId={activePersonaId} setActivePersonaId={(id: string) => { setActivePersonaId(id); const p = personas.find(pers => pers.id === id); if (p) setAppToast(`Manifested: ${p.name}`); }} chats={chats} updatePersona={(p: Persona) => setPersonas(prev => prev.map(o => o.id === p.id ? p : o))} userProfile={userProfile} setUserProfile={setUserProfile} onDeletePersona={(id: string) => setPersonas(personas.filter(p => p.id !== id))} onAddPersona={openPersonaCreator} />;
       case "settings": return <SettingsView onClearData={clearAllData} userProfile={userProfile} setAppToast={setAppToast} />;
       default: return <ForYouView characters={characters} onStartChat={startChat} onCustomize={setEditingCharacterId} />;
     }
@@ -547,6 +554,11 @@ const CreateView = ({ onCreateCharacter, onCreatePersona, onBack, initialMode, u
   const [personaName, setPersonaName] = useState("");
   const [personaBio, setPersonaBio] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
+
+  // Sync mode with initialMode if it changes externally
+  useEffect(() => {
+    if (initialMode) setMode(initialMode);
+  }, [initialMode]);
 
   const neuralHarvest = async () => {
     vibrate(25);
@@ -895,7 +907,7 @@ const LibraryView = ({ characters, userProfile, onEditCharacter }: any) => (
   </div>
 );
 
-const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfile, setUserProfile, onDeletePersona, updatePersona }: any) => {
+const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfile, setUserProfile, onDeletePersona, updatePersona, onAddPersona }: any) => {
   return (
     <div className="p-4 max-w-lg mx-auto w-full pb-24">
       <div className="flex flex-col items-center mb-8">
@@ -903,6 +915,14 @@ const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfil
         <h1 className="text-2xl font-black tracking-tighter text-white">{userProfile.name}</h1>
         <div className="text-slate-600 font-bold uppercase tracking-widest text-[9px] mt-0.5">{userProfile.handle}</div>
       </div>
+
+      <div className="flex items-center justify-between mb-4 px-2">
+         <h2 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Personas</h2>
+         <button onClick={onAddPersona} className="p-2 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-full transition-all active:scale-90">
+            <Plus size={16} strokeWidth={3} />
+         </button>
+      </div>
+
       <div className="space-y-3">
         {personas.map((p: any) => (
           <button key={p.id} onClick={() => setActivePersonaId(p.id)} className={`w-full p-4 rounded-[1.8rem] text-left transition-all border-2 relative overflow-hidden ${activePersonaId === p.id ? 'bg-primary border-primary text-white shadow-xl shadow-primary/20' : 'bg-[#1a1a1a] border-white/5 text-slate-500 hover:border-white/10'}`}>
@@ -915,6 +935,12 @@ const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfil
             </div>
           </button>
         ))}
+        {personas.length === 0 && (
+           <div className="p-8 text-center bg-[#1a1a1a] rounded-[1.8rem] border border-dashed border-white/10 opacity-30">
+              <UserPlus size={32} className="mx-auto mb-2" />
+              <p className="text-[10px] font-bold uppercase tracking-widest">No Personas Found</p>
+           </div>
+        )}
       </div>
     </div>
   );
@@ -953,7 +979,7 @@ const SettingsView = ({ onClearData, userProfile, setAppToast }: any) => (
   </div>
 );
 
-const ChatInterface = ({ session, character, personas, activePersonaId, setActivePersonaId, onBack, onUpdateSession, onUpdateCharacter, userProfile, setAppToast }: any) => {
+const ChatInterface = ({ session, character, personas, activePersonaId, setActivePersonaId, onBack, onUpdateSession, onUpdateCharacter, userProfile, setAppToast, onCreatePersona }: any) => {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1277,7 +1303,12 @@ STRICT ROLEPLAY RULES:
       {showPersonaShift && (
         <div className="fixed inset-0 z-[120] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="bg-[#1a1a1a] w-full max-w-sm rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
-              <div className="p-6 border-b border-white/5"><h3 className="text-base font-black uppercase tracking-tighter text-white">Select Resonance</h3></div>
+              <div className="p-6 border-b border-white/5 flex items-center justify-between">
+                <h3 className="text-base font-black uppercase tracking-tighter text-white">Select Resonance</h3>
+                <button onClick={onCreatePersona} className="p-2 text-primary hover:bg-primary/10 rounded-full transition-all">
+                  <Plus size={18} strokeWidth={3} />
+                </button>
+              </div>
               <div className="max-h-[260px] overflow-y-auto p-3 space-y-2 no-scrollbar">
                 {personas.map((p: Persona) => (
                   <button key={p.id} onClick={() => { setActivePersonaId(p.id); setShowPersonaShift(false); }} className={`w-full p-4 rounded-xl text-left flex items-center justify-between transition-all ${activePersonaId === p.id ? 'bg-primary text-white shadow-lg' : 'bg-white/5 text-slate-500 hover:bg-white/10'}`}>
@@ -1285,6 +1316,13 @@ STRICT ROLEPLAY RULES:
                     {activePersonaId === p.id && <Check size={14} />}
                   </button>
                 ))}
+                <button 
+                  onClick={onCreatePersona}
+                  className="w-full p-4 rounded-xl text-primary border border-dashed border-primary/30 flex items-center justify-center gap-2 hover:bg-primary/5 transition-all"
+                >
+                  <PlusCircle size={16} />
+                  <span className="text-[10px] font-black uppercase tracking-widest">New Persona</span>
+                </button>
               </div>
               <div className="p-3 border-t border-white/5 text-center"><button onClick={() => setShowPersonaShift(false)} className="py-2 text-slate-600 font-black uppercase text-[9px]">Cancel</button></div>
            </div>
