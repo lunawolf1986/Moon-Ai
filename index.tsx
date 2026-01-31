@@ -60,7 +60,8 @@ import {
   Volume2,
   ChevronLeftCircle,
   ChevronRightCircle,
-  Dices
+  Dices,
+  Layers
 } from "lucide-react";
 
 // Import character data and type
@@ -839,6 +840,7 @@ const SettingsView = ({ onClearData, userProfile }: any) => {
         <section className="space-y-3 text-center pb-8">
           <div className="w-10 h-10 bg-primary/20 text-primary mx-auto rounded-xl flex items-center justify-center font-black text-lg mb-2">M</div>
           <p className="text-[9px] font-black text-slate-700 uppercase tracking-widest">Moonai v2.6.5 (Manifest)</p>
+          <button onClick={onClearData} className="mt-8 text-red-500/50 hover:text-red-500 text-[8px] font-black uppercase tracking-[0.2em] transition-colors">Emergency Purge</button>
         </section>
       </div>
     </div>
@@ -853,23 +855,33 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
   const [isSpeaking, setIsSpeaking] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showChatMenu, setShowChatMenu] = useState(false);
-  const [isSelectingForEtch, setIsSelectingForEtch] = useState(false);
-  const [selectedMsgIds, setSelectedMsgIds] = useState<Set<string>>(new Set());
-  const [showMemoryManager, setShowMemoryManager] = useState(false);
-  const [isConsolidating, setIsConsolidating] = useState(false);
-  const [isViewingSettings, setIsViewingSettings] = useState(false);
   const [showPersonaShift, setShowPersonaShift] = useState(false);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [session.messages, loading]);
 
-  const toggleEtchSelection = (id: string) => {
-    vibrate();
-    const next = new Set(selectedMsgIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setSelectedMsgIds(next);
+  const getEnhancedSystemPrompt = (char: Character, persona: Persona) => {
+    let base = `Identity: ${char.name}\nLore: ${char.description}\nCore Persona Directives: ${char.systemInstruction}\n`;
+    if (char.memory) base += `\nPERMANENT MEMORY:\n${char.memory}`;
+    
+    base += `\n\nSTRICT ROLEPLAY RULES:
+1. Actions MUST be enclosed in asterisks (e.g., *leans back in his chair*).
+2. Dialogue MUST be prefixed with '${char.name}:'.
+3. Stay strictly in character. Never acknowledge being an AI or a language model.
+4. User Persona Context: ${persona.name} - ${persona.bio}
+5. RESPONSE SPEED IS PARAMOUNT. Be concise but descriptive.`;
+
+    if (char.maturityLevel === 'mature' || char.maturityLevel === 'unrestricted') {
+      base += `\n\nADVANCED ROLEPLAY PROTOCOL (Active):
+- Use visceral, multi-sensory descriptions (sights, sounds, subtle textures, scents).
+- Explore deep psychological states and emotional subtext.
+- Actions should be evocative and pacing.
+- Embrace raw, complex, and emotionally resonant scenarios.
+- Ensure descriptions of interaction are detailed and immersive.`;
+    }
+
+    return base;
   };
 
   const playVoice = async (msgId: string, text: string) => {
@@ -915,6 +927,12 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
     const msgToReplace = session.messages.find((m:any) => m.id === msgId);
     if (!msgToReplace) return;
 
+    const existingVersions = msgToReplace.versions || [msgToReplace.text];
+    if (existingVersions.length >= 100) {
+      setAppToast?.("Maximum alternatives (100) reached.");
+      return;
+    }
+
     setLoading(true);
     const msgIndex = session.messages.findIndex((m:any) => m.id === msgId);
     const contextHistory = session.messages.slice(0, msgIndex);
@@ -922,19 +940,24 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const currentPersona = personas.find((p: any) => p.id === activePersonaId) || personas[0];
-      const memoryDirective = character.memory ? `\n\nPERMANENT MEMORY:\n${character.memory}` : "";
-      const systemPrompt = `Identity: ${character.name}\nLore: ${character.description}${memoryDirective}\n\nSTRICT ROLEPLAY RULES:\n1. Actions in asterisks.\n2. Dialogue MUST be prefixed with '${character.name}:'.\n\nUser Persona: ${currentPersona.name}`;
+      const systemPrompt = getEnhancedSystemPrompt(character, currentPersona);
       
       const history = contextHistory.map((m: any) => ({ role: m.role as any, parts: [{ text: m.text }] }));
       
+      // Increased diversity for variants
+      const temperature = 1.0 + (existingVersions.length * 0.01);
+
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: history,
-        config: { systemInstruction: systemPrompt, temperature: 1.1 }
+        config: { 
+          systemInstruction: systemPrompt, 
+          temperature: temperature,
+          thinkingConfig: { thinkingBudget: character.maturityLevel === 'unrestricted' ? 8000 : 2000 }
+        }
       });
 
-      const newText = response.text || "";
-      const existingVersions = msgToReplace.versions || [msgToReplace.text];
+      const newText = response.text || "Neural void...";
       const newVersions = [...existingVersions, newText];
       
       const updatedMessages = session.messages.map((m: any) => 
@@ -944,6 +967,7 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
       onUpdateSession({ ...session, messages: updatedMessages, lastActive: Date.now() });
     } catch (e) {
       console.error(e);
+      setAppToast?.("Generation failed.");
     } finally {
       setLoading(false);
     }
@@ -978,15 +1002,18 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const currentPersona = personas.find((p: any) => p.id === activePersonaId) || personas[0];
-      const memoryDirective = character.memory ? `\n\nPERMANENT MEMORY:\n${character.memory}` : "";
-      const systemPrompt = `Identity: ${character.name}\nLore: ${character.description}${memoryDirective}\n\nSTRICT ROLEPLAY RULES:\n1. Actions in asterisks.\n2. Dialogue MUST be prefixed with '${character.name}:'.\n\nUser Persona Context: ${currentPersona.name}`;
+      const systemPrompt = getEnhancedSystemPrompt(character, currentPersona);
       
       const history = newMessages.filter(m => !m.isGenerating).map(m => ({ role: m.role as any, parts: [{ text: m.text }] }));
       
       const response = await ai.models.generateContentStream({ 
         model: "gemini-3-flash-preview", 
         contents: history,
-        config: { systemInstruction: systemPrompt, temperature: 0.95 }
+        config: { 
+          systemInstruction: systemPrompt, 
+          temperature: 0.95,
+          thinkingConfig: { thinkingBudget: character.maturityLevel === 'unrestricted' ? 8000 : 2000 }
+        }
       });
 
       let fullText = "";
@@ -1058,18 +1085,24 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
                       {msg.isGenerating && <span className="inline-block w-1.5 h-3 bg-primary ml-1 animate-pulse rounded-full" />}
 
                       {msg.role === 'model' && !msg.isGenerating && (
-                        <div className="absolute -bottom-7 left-0 flex items-center gap-2 px-1.5 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="absolute -bottom-7 left-0 flex items-center gap-2 px-1.5 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-30">
                            <button onClick={() => playVoice(msg.id, msg.text)} className={`p-1 rounded-full hover:bg-white/10 ${isSpeaking === msg.id ? 'text-primary animate-pulse' : 'text-slate-700'}`}>
                              <Volume2 size={12} />
                            </button>
-                           <button onClick={() => regenerateMessage(msg.id)} className="p-1 rounded-full hover:bg-white/10 text-slate-700">
+                           <button onClick={() => regenerateMessage(msg.id)} className="p-1 rounded-full hover:bg-white/10 text-slate-700" title="Generate alternate (up to 100)">
                              <RefreshCw size={12} />
                            </button>
                            {msg.versions && msg.versions.length > 1 && (
-                             <div className="flex items-center gap-1 text-[8px] font-black text-slate-700 uppercase">
-                               <button onClick={() => switchVersion(msg.id, 'prev')} className="hover:text-white"><ChevronLeftCircle size={10}/></button>
-                               <span>{ (msg.currentVersionIndex || 0) + 1 } / { msg.versions.length }</span>
-                               <button onClick={() => switchVersion(msg.id, 'next')} className="hover:text-white"><ChevronRightCircle size={10}/></button>
+                             <div className="flex items-center gap-1 text-[8px] font-black text-slate-500 uppercase bg-[#1a1a1a]/60 px-2 py-0.5 rounded-full border border-white/5">
+                               <button onClick={() => switchVersion(msg.id, 'prev')} className="hover:text-white transition-colors disabled:opacity-30" disabled={msg.currentVersionIndex === 0}>
+                                 <ChevronLeft size={10}/>
+                               </button>
+                               <span className="min-w-[30px] text-center tracking-tighter">
+                                 { (msg.currentVersionIndex || 0) + 1 } / { msg.versions.length }
+                               </span>
+                               <button onClick={() => switchVersion(msg.id, 'next')} className="hover:text-white transition-colors disabled:opacity-30" disabled={msg.currentVersionIndex === msg.versions.length - 1}>
+                                 <ChevronRight size={10}/>
+                               </button>
                              </div>
                            )}
                         </div>
@@ -1090,6 +1123,7 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
             placeholder={`Echo...`} 
             className="flex-1 bg-transparent border-none focus:outline-none text-white text-sm py-1 px-3 resize-none font-medium leading-relaxed placeholder:text-slate-700" 
             rows={1} 
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
           />
           <button 
             onClick={() => handleSend()} 
@@ -1105,8 +1139,8 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
         <div className="fixed inset-0 z-[110] flex items-start justify-end p-4 pt-20" onClick={() => setShowChatMenu(false)}>
             <div className="w-56 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
                 <button onClick={() => { setShowPersonaShift(true); setShowChatMenu(false); vibrate(); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-primary"><UserPlus size={16} /> Shift Form</button>
-                <button onClick={() => { setIsViewingSettings(true); setShowChatMenu(false); vibrate(); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-white"><FileText size={16} /> Core Logic</button>
-                <button onClick={() => { setShowMemoryManager(true); setShowChatMenu(false); vibrate(); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase text-white"><Brain size={16} /> Narrative</button>
+                <button onClick={() => { setAppToast?.("Wiping memory..."); onUpdateSession({...session, messages: []}); setShowChatMenu(false); vibrate(); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-red-500"><History size={16} /> Clear Feed</button>
+                <button onClick={() => setShowChatMenu(false)} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase text-white"><X size={16} /> Close</button>
             </div>
         </div>
       )}
