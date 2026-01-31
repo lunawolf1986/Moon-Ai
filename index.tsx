@@ -129,6 +129,20 @@ const replaceUserPlaceholder = (text: string | undefined, personaName: string) =
   return text.replace(/\{\{user\}\}/gi, personaName);
 };
 
+// Formats text with asterisks into styled spans, hiding the asterisks
+const renderFormattedText = (text: string) => {
+  // Regex to match **bold** or *italic/action*
+  const parts = text.split(/(\*\*.*?\*\*|\*.*?\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i} className="font-bold text-white">{part.slice(2, -2)}</strong>;
+    } else if (part.startsWith('*') && part.endsWith('*')) {
+      return <span key={i} className="italic text-slate-400 opacity-90">{part.slice(1, -1)}</span>;
+    }
+    return part;
+  });
+};
+
 // --- Components ---
 
 const AbstractAvatar = ({ 
@@ -303,7 +317,7 @@ const App = () => {
                setActivePersonaId(id);
                const targetPersona = personas.find(p => p.id === id);
                if (targetPersona) {
-                 const systemMsg: Message = { id: generateId("sys_"), role: "system", text: `Manifestation Shift: Active Persona is now ${targetPersona.name}.`, timestamp: Date.now() };
+                 const systemMsg: Message = { id: generateId("sys_"), role: "system", text: `Persona Shift: You are now interacting with ${targetPersona.name}.`, timestamp: Date.now() };
                  setChats(prev => prev.map(c => c.id === session.id ? { ...c, messages: [...c.messages, systemMsg] } : c));
                }
             }}
@@ -889,14 +903,48 @@ CORE DIRECTIVES / DEFINITION:
 ${replaceUserPlaceholder(char.systemInstruction, persona.name)}
 
 CONTEXT: You are talking to ${persona.name}. Characterized as: ${persona.bio}.
-INITIAL GREETING: ${replaceUserPlaceholder(char.greeting, persona.name)}
+IMPORTANT: You MUST maintain the continuity of the conversation. You said the following greeting to start: 
+"${replaceUserPlaceholder(char.greeting, persona.name)}"
 
 STRICT ROLEPLAY RULES:
 - IMPORTANT: Refer to the user as ${persona.name} (never generic).
 - Actions in asterisks (*).
 - Dialogue prefixed with '${char.name}: '.
 - MINIMAL LATENCY MODE: Keep responses cinematic, evocative, but concise.
-- UNRESTRICTED: Embrace high-fidelity, visceral descriptions.`;
+- UNRESTRICTED: Embrace high-fidelity, visceral descriptions.
+- CONSISTENCY: Never forget who you are or what happened previously in this dialogue.`;
+  };
+
+  /**
+   * Robust history formatter for Gemini API.
+   * Ensures history is alternating correctly and merged where necessary.
+   */
+  const formatHistoryForGemini = (messages: Message[], charGreeting?: string, personaName?: string) => {
+    const history = [];
+    
+    // Optional: Start with the greeting if it's the first turn, but Gemini requires starting with 'user'.
+    // We handle the greeting in the system prompt for better stability.
+
+    let lastRole: "user" | "model" | null = null;
+
+    for (const msg of messages) {
+      if (msg.role === 'system' || msg.isGenerating || msg.isHidden) continue;
+      
+      const role = msg.role as 'user' | 'model';
+      
+      if (role === lastRole) {
+        // Combine consecutive turns of the same role to maintain API strictness
+        const lastContent = history[history.length - 1];
+        lastContent.parts[0].text += "\n\n" + msg.text;
+      } else {
+        history.push({ role, parts: [{ text: msg.text }] });
+        lastRole = role;
+      }
+    }
+
+    // Gemini works best when the conversation starts with a 'user' turn.
+    const firstUserIdx = history.findIndex(h => h.role === 'user');
+    return firstUserIdx !== -1 ? history.slice(firstUserIdx) : [];
   };
 
   const regenerateMessage = async (msgId: string) => {
@@ -913,16 +961,16 @@ STRICT ROLEPLAY RULES:
 
     setLoading(true);
     const msgIndex = session.messages.findIndex((m:any) => m.id === msgId);
-    const chatHistory = session.messages.slice(0, msgIndex).filter(m => m.role === 'user' || m.role === 'model').map(m => ({ role: m.role as any, parts: [{ text: m.text }] }));
-    const firstUserIdx = chatHistory.findIndex(m => m.role === 'user');
-    const finalContents = firstUserIdx !== -1 ? chatHistory.slice(firstUserIdx) : [];
+    
+    // Get history up to this point
+    const contents = formatHistoryForGemini(session.messages.slice(0, msgIndex));
 
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const persona = currentPersona;
       const stream = await ai.models.generateContentStream({ 
         model: "gemini-3-flash-preview", 
-        contents: finalContents,
+        contents: contents,
         config: { systemInstruction: getEnhancedSystemPrompt(character, persona), temperature: 1.0, thinkingConfig: { thinkingBudget: 0 } }
       });
       let fullText = "";
@@ -945,16 +993,13 @@ STRICT ROLEPLAY RULES:
     const userMsg: Message = { id: userMsgId, role: "user", text: input.trim(), personaId: activePersonaId, timestamp: Date.now() };
     const modelMsg: Message = { id: modelMsgId, role: "model", text: "", timestamp: Date.now(), isGenerating: true, versions: [], currentVersionIndex: 0 };
     
-    const intermediateMessages = [...session.messages, userMsg, modelMsg];
+    // Add messages to internal state immediately for responsiveness
+    const updatedMessages = [...session.messages, userMsg, modelMsg];
+    onUpdateSession((prev: ChatSession) => ({ ...prev, messages: updatedMessages, lastActive: Date.now() }));
     
-    const chatHistory = intermediateMessages
-      .filter(m => !m.isGenerating && (m.role === 'user' || m.role === 'model'))
-      .map(m => ({ role: m.role as "user" | "model", parts: [{ text: m.text }] }));
-    
-    const firstUserIdx = chatHistory.findIndex(m => m.role === 'user');
-    const finalContents = firstUserIdx !== -1 ? chatHistory.slice(firstUserIdx) : [];
+    // Prepare history for API
+    const contents = formatHistoryForGemini(updatedMessages.filter(m => !m.isGenerating), character.greeting, currentPersona.name);
 
-    onUpdateSession({ ...session, messages: intermediateMessages, lastActive: Date.now() });
     setInput("");
     setLoading(true);
     
@@ -965,7 +1010,7 @@ STRICT ROLEPLAY RULES:
       
       const stream = await ai.models.generateContentStream({ 
         model: "gemini-3-flash-preview", 
-        contents: finalContents,
+        contents: contents,
         config: { 
           systemInstruction: systemPrompt, 
           temperature: 1.0,
@@ -989,7 +1034,7 @@ STRICT ROLEPLAY RULES:
       }));
     } catch (e) { 
       console.error(e);
-      setAppToast?.("Interrupted Connection.");
+      setAppToast?.("Neural Link Failed.");
     } finally { setLoading(false); }
   };
 
@@ -1057,7 +1102,7 @@ STRICT ROLEPLAY RULES:
                   className="px-5 py-4 bg-[#1a1a1a]/95 backdrop-blur-lg text-slate-100 border border-white/10 rounded-[2rem] rounded-tl-none shadow-[0_10px_40px_-10px_rgba(0,0,0,0.8)] transition-all"
                   style={{ boxShadow: `0 10px 50px -15px ${characterHex}50` }}
                  >
-                   {replaceUserPlaceholder(character.greeting, currentPersona.name).split('\n').map((l, i) => <p key={i} className={`mb-2 last:mb-0 ${l.startsWith('*') ? 'text-slate-400 italic' : 'font-medium'}`}>{l}</p>)}
+                   {replaceUserPlaceholder(character.greeting, currentPersona.name).split('\n').map((l, i) => <p key={i} className="mb-2 last:mb-0 font-medium leading-relaxed">{renderFormattedText(l)}</p>)}
                  </div>
                </div>
              </div>
@@ -1065,56 +1110,64 @@ STRICT ROLEPLAY RULES:
           
           {session.messages.map((msg: Message) => (
             <div key={msg.id} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in duration-300`}>
-              <div className={`flex max-w-[92%] gap-3 items-start md:max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                {msg.role === 'model' && <AbstractAvatar name={character.name} colorClass={character.color} seed={character.seed} size="sm" initial={character.initial} className="mt-1" />}
-                
-                <div className="flex flex-col gap-3">
-                  <div 
-                    className={`group relative px-5 py-4 rounded-[2rem] text-[15px] shadow-2xl transition-all ${
-                      msg.role === 'user' ? 'bg-primary text-white rounded-tr-none' : 
-                      'bg-[#1a1a1a]/95 backdrop-blur-lg text-slate-100 border border-white/10 rounded-tl-none'
-                    }`}
-                    style={msg.role === 'model' ? { boxShadow: `0 15px 60px -15px ${characterHex}70` } : {}}
-                  >
-                    {msg.text.split('\n').map((l, i) => (
-                      <p key={i} className={`mb-2 last:mb-0 ${l.startsWith('*') ? 'text-slate-400 italic' : 'font-medium leading-relaxed'}`}>
-                        {l}
-                      </p>
-                    ))}
-                    {msg.isGenerating && <span className="inline-block w-2 h-4 bg-primary ml-1 animate-pulse rounded-full" />}
+              {msg.role === 'system' ? (
+                <div className="w-full flex justify-center py-4">
+                  <div className="bg-white/5 border border-white/10 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    {msg.text}
                   </div>
-
-                  {msg.role === 'model' && !msg.isGenerating && (
-                    <div className="flex items-center gap-3 px-2 animate-in slide-in-from-top-4 duration-500">
-                       <button 
-                        onClick={() => switchVersion(msg.id, 'prev')} 
-                        disabled={msg.currentVersionIndex === 0}
-                        className={`w-10 h-10 flex items-center justify-center rounded-full border border-white/10 transition-all ${msg.currentVersionIndex === 0 ? 'text-slate-800 opacity-10 cursor-not-allowed' : 'bg-[#1a1a1a] text-white hover:bg-white/10 active:scale-90 shadow-xl'}`}
-                       >
-                         <ArrowLeft size={20} strokeWidth={3} />
-                       </button>
-                       
-                       <div className="px-5 py-2 bg-[#1a1a1a] rounded-full border border-white/10 flex items-center gap-2 shadow-inner">
-                          <span className="text-[10px] font-black text-white/30 uppercase tracking-widest">Resonance</span>
-                          <span className="text-xs font-black text-primary tabular-nums">
-                            {(msg.currentVersionIndex || 0) + 1} <span className="text-white/20 mx-1">/</span> {msg.versions?.length || 1}
-                          </span>
-                       </div>
-
-                       <button 
-                        onClick={() => switchVersion(msg.id, 'next')} 
-                        className={`w-10 h-10 flex items-center justify-center rounded-full border border-white/10 transition-all bg-[#1a1a1a] text-white hover:bg-white/10 active:scale-90 shadow-xl`}
-                        title={msg.currentVersionIndex === (msg.versions?.length || 1) - 1 ? "Generate New Resonance" : "Next Resonance"}
-                       >
-                         {msg.currentVersionIndex === (msg.versions?.length || 1) - 1 ? 
-                            <Plus size={20} strokeWidth={3} className="text-primary animate-pulse" /> : 
-                            <ArrowRight size={20} strokeWidth={3} />
-                         }
-                       </button>
-                    </div>
-                  )}
                 </div>
-              </div>
+              ) : (
+                <div className={`flex max-w-[92%] gap-3 items-start md:max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+                  {msg.role === 'model' && <AbstractAvatar name={character.name} colorClass={character.color} seed={character.seed} size="sm" initial={character.initial} className="mt-1" />}
+                  
+                  <div className="flex flex-col gap-3">
+                    <div 
+                      className={`group relative px-5 py-4 rounded-[2rem] text-[15px] shadow-2xl transition-all ${
+                        msg.role === 'user' ? 'bg-primary text-white rounded-tr-none' : 
+                        'bg-[#1a1a1a]/95 backdrop-blur-lg text-slate-100 border border-white/10 rounded-tl-none'
+                      }`}
+                      style={msg.role === 'model' ? { boxShadow: `0 15px 60px -15px ${characterHex}70` } : {}}
+                    >
+                      {msg.text.split('\n').map((l, i) => (
+                        <p key={i} className="mb-2 last:mb-0 font-medium leading-relaxed">
+                          {renderFormattedText(l)}
+                        </p>
+                      ))}
+                      {msg.isGenerating && <span className="inline-block w-2 h-4 bg-primary ml-1 animate-pulse rounded-full" />}
+                    </div>
+
+                    {msg.role === 'model' && !msg.isGenerating && (
+                      <div className="flex items-center gap-3 px-2 animate-in slide-in-from-top-4 duration-500">
+                         <button 
+                          onClick={() => switchVersion(msg.id, 'prev')} 
+                          disabled={msg.currentVersionIndex === 0}
+                          className={`w-10 h-10 flex items-center justify-center rounded-full border border-white/10 transition-all ${msg.currentVersionIndex === 0 ? 'text-slate-800 opacity-10 cursor-not-allowed' : 'bg-[#1a1a1a] text-white hover:bg-white/10 active:scale-90 shadow-xl'}`}
+                         >
+                           <ArrowLeft size={20} strokeWidth={3} />
+                         </button>
+                         
+                         <div className="px-5 py-2 bg-[#1a1a1a] rounded-full border border-white/10 flex items-center gap-2 shadow-inner">
+                            <span className="text-[10px] font-black text-white/30 uppercase tracking-widest">Resonance</span>
+                            <span className="text-xs font-black text-primary tabular-nums">
+                              {(msg.currentVersionIndex || 0) + 1} <span className="text-white/20 mx-1">/</span> {msg.versions?.length || 1}
+                            </span>
+                         </div>
+
+                         <button 
+                          onClick={() => switchVersion(msg.id, 'next')} 
+                          className={`w-10 h-10 flex items-center justify-center rounded-full border border-white/10 transition-all bg-[#1a1a1a] text-white hover:bg-white/10 active:scale-90 shadow-xl`}
+                          title={msg.currentVersionIndex === (msg.versions?.length || 1) - 1 ? "Generate New Resonance" : "Next Resonance"}
+                         >
+                           {msg.currentVersionIndex === (msg.versions?.length || 1) - 1 ? 
+                              <Plus size={20} strokeWidth={3} className="text-primary animate-pulse" /> : 
+                              <ArrowRight size={20} strokeWidth={3} />
+                           }
+                         </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -1135,7 +1188,7 @@ STRICT ROLEPLAY RULES:
             disabled={!input.trim() || loading} 
             className={`p-4 rounded-full transition-all flex-none ${input.trim() ? 'bg-primary text-white shadow-[0_0_20px_rgba(59,130,246,0.5)] active:scale-95' : 'bg-white/5 text-slate-800'}`}
           >
-            <Send size={20} />
+            <Check size={20} />
           </button>
         </div>
       </div>
