@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { GoogleGenAI, HarmCategory, HarmBlockThreshold, Modality } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 import {
   MessageSquare,
   User,
@@ -13,55 +12,27 @@ import {
   Zap,
   MoreHorizontal,
   Send,
-  Mic,
-  MicOff,
   RefreshCw,
   Edit3,
-  Play,
-  Type,
   Shield,
-  LogOut,
   ChevronLeft,
   ChevronRight,
-  Users,
   Search,
-  Hash,
-  Copy,
   Trash2,
   MoreVertical,
   X,
   Check,
-  Save,
-  Eye,
-  EyeOff,
-  RotateCcw,
   Sparkles,
-  Command,
-  ZapOff,
-  Layout,
-  Info,
-  Wand2,
-  Lock,
-  Globe,
-  Tag,
-  AlertTriangle,
-  BrainCircuit,
-  History,
-  CheckSquare,
-  Square,
-  ArrowUpRight,
-  Menu,
+  Brain,
   Pencil,
   FileText,
-  AlignLeft,
-  Brain,
-  Trash,
   UserPlus,
   Volume2,
   ChevronLeftCircle,
   ChevronRightCircle,
   Dices,
-  Layers
+  History,
+  Info
 } from "lucide-react";
 
 // Import character data and type
@@ -105,6 +76,8 @@ interface ChatSession {
 }
 
 // --- Utilities ---
+
+const generateId = (prefix: string = "") => `${prefix}${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 const vibrate = (ms: number = 10) => {
   if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(ms);
@@ -261,10 +234,10 @@ const App = () => {
     } else {
       const char = characters.find(c => c.id === charId);
       const newChat: ChatSession = {
-        id: `chat_${Date.now()}`,
+        id: generateId("chat_"),
         characterId: charId,
         messages: char?.greeting ? [{
-            id: `msg_${Date.now()}_init`,
+            id: generateId("msg_"),
             role: "model",
             text: char.greeting,
             versions: [char.greeting], 
@@ -302,7 +275,7 @@ const App = () => {
                setActivePersonaId(id);
                const targetPersona = personas.find(p => p.id === id);
                if (targetPersona) {
-                 const systemMsg: Message = { id: `system_${Date.now()}`, role: "system", text: `Manifestation Shift: Active Persona is now ${targetPersona.name}.`, timestamp: Date.now() };
+                 const systemMsg: Message = { id: generateId("sys_"), role: "system", text: `Manifestation Shift: Active Persona is now ${targetPersona.name}.`, timestamp: Date.now() };
                  setChats(prev => prev.map(c => c.id === session.id ? { ...c, messages: [...c.messages, systemMsg] } : c));
                }
             }}
@@ -610,7 +583,7 @@ const CreateView = ({ onCreateCharacter, onCreatePersona, onBack, initialMode, u
             userProfile={userProfile} 
             initialData={{ creator: userProfile.handle }} 
             onCancel={onBack} 
-            onSave={(data) => onCreateCharacter({ id: `char_${Date.now()}`, initial: data.name![0].toUpperCase(), color: 'bg-indigo-600', creator: userProfile.handle, engagement: "0", tags: [], ...data })} 
+            onSave={(data) => onCreateCharacter({ id: generateId("char_"), initial: data.name![0].toUpperCase(), color: 'bg-indigo-600', creator: userProfile.handle, engagement: "0", tags: [], ...data })} 
           />
         ) : (
           <div className="px-4 pb-20 space-y-4 max-w-lg mx-auto w-full">
@@ -626,7 +599,7 @@ const CreateView = ({ onCreateCharacter, onCreatePersona, onBack, initialMode, u
               onClick={() => { 
                 vibrate(); 
                 onCreatePersona({ 
-                  id: `p_${Date.now()}`, 
+                  id: generateId("p_"), 
                   name: personaName, 
                   bio: personaBio, 
                   traits: [], 
@@ -862,23 +835,29 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [session.messages, loading]);
 
   const getEnhancedSystemPrompt = (char: Character, persona: Persona) => {
-    let base = `Identity: ${char.name}\nLore: ${char.description}\nCore Persona Directives: ${char.systemInstruction}\n`;
-    if (char.memory) base += `\nPERMANENT MEMORY:\n${char.memory}`;
-    
-    base += `\n\nSTRICT ROLEPLAY RULES:
-1. Actions MUST be enclosed in asterisks (e.g., *leans back in his chair*).
-2. Dialogue MUST be prefixed with '${char.name}:'.
-3. Stay strictly in character. Never acknowledge being an AI or a language model.
-4. User Persona Context: ${persona.name} - ${persona.bio}
-5. RESPONSE SPEED IS PARAMOUNT. Be concise but descriptive.`;
+    let base = `IDENTITY CORE: ${char.name}
+LORE & BACKGROUND: ${char.description}
+CORE PERSUAL DIRECTIVES: ${char.systemInstruction}
+${char.memory ? `LONG-TERM MEMORY ARCHIVE:\n${char.memory}` : ""}
+
+STRICT ROLEPLAY GUIDELINES:
+1. NARRATIVE STYLE: Actions, environmental shifts, and internal shifts MUST be enclosed in single asterisks (*). Example: *He sighs, leaning against the cold stone wall, the scent of rain lingering on his skin.*
+2. DIALOGUE ANCHOR: Dialogue MUST ALWAYS be prefixed with '${char.name}: '.
+3. IMMERSION: Never break character. Do not mention being an AI, LLM, or assistant. 
+4. USER CONTEXT: You are interacting with ${persona.name}. Their profile: ${persona.bio}.
+5. DYNAMIC PACING: Adapt response length to the conversation. Intense moments warrant short, punchy dialogue; slow moments warrant rich, descriptive prose.
+6. LINGUISTIC PROFILE: Use specific vocabulary and tonality consistent with ${char.name}'s origins and intelligence level.`;
 
     if (char.maturityLevel === 'mature' || char.maturityLevel === 'unrestricted') {
-      base += `\n\nADVANCED ROLEPLAY PROTOCOL (Active):
-- Use visceral, multi-sensory descriptions (sights, sounds, subtle textures, scents).
-- Explore deep psychological states and emotional subtext.
-- Actions should be evocative and pacing.
-- Embrace raw, complex, and emotionally resonant scenarios.
-- Ensure descriptions of interaction are detailed and immersive.`;
+      base += `
+7. UNRESTRICTED PROTOCOL (ACTIVE):
+- VISCERALITY: Describe multi-sensory experiences (textures, shifts in temperature, the cadence of breathing, subtle scents).
+- PSYCHOLOGICAL DEPTH: Explore character motivations, complex emotional resonance, and underlying subtext.
+- PHYSICALITY: Detail physical proximity and movement with cinematic clarity.
+- RAWNESS: Embrace authentic, high-stakes emotional and situational scenarios without sterile filters.`;
+    } else {
+      base += `
+7. STANDARD PROTOCOL: Maintain an appropriate tone while remaining descriptive and engaging.`;
     }
 
     return base;
@@ -923,37 +902,36 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
   };
 
   const regenerateMessage = async (msgId: string) => {
+    if (loading) return;
     vibrate(20);
     const msgToReplace = session.messages.find((m:any) => m.id === msgId);
     if (!msgToReplace) return;
 
     const existingVersions = msgToReplace.versions || [msgToReplace.text];
     if (existingVersions.length >= 100) {
-      setAppToast?.("Maximum alternatives (100) reached.");
+      setAppToast?.("Maximum alternatives reached.");
       return;
     }
 
     setLoading(true);
     const msgIndex = session.messages.findIndex((m:any) => m.id === msgId);
-    const contextHistory = session.messages.slice(0, msgIndex);
+    const contextHistory = session.messages
+      .slice(0, msgIndex)
+      .filter(m => m.role === 'user' || m.role === 'model')
+      .map(m => ({ role: m.role as any, parts: [{ text: m.text }] }));
     
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const currentPersona = personas.find((p: any) => p.id === activePersonaId) || personas[0];
       const systemPrompt = getEnhancedSystemPrompt(character, currentPersona);
       
-      const history = contextHistory.map((m: any) => ({ role: m.role as any, parts: [{ text: m.text }] }));
-      
-      // Increased diversity for variants
-      const temperature = 1.0 + (existingVersions.length * 0.01);
-
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: history,
+        contents: contextHistory,
         config: { 
           systemInstruction: systemPrompt, 
-          temperature: temperature,
-          thinkingConfig: { thinkingBudget: character.maturityLevel === 'unrestricted' ? 8000 : 2000 }
+          temperature: 1.1 + (existingVersions.length * 0.02),
+          thinkingConfig: { thinkingBudget: character.maturityLevel === 'unrestricted' ? 12000 : 4000 }
         }
       });
 
@@ -961,13 +939,13 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
       const newVersions = [...existingVersions, newText];
       
       const updatedMessages = session.messages.map((m: any) => 
-        m.id === msgId ? { ...m, text: newText, versions: newVersions, currentVersionIndex: newVersions.length - 1 } : m
+        m.id === msgId ? { ...m, text: newText, versions: newVersions, currentVersionIndex: newVersions.length - 1, isGenerating: false } : m
       );
 
       onUpdateSession({ ...session, messages: updatedMessages, lastActive: Date.now() });
     } catch (e) {
-      console.error(e);
-      setAppToast?.("Generation failed.");
+      console.error("Regeneration Error:", e);
+      setAppToast?.("Regeneration failed.");
     } finally {
       setLoading(false);
     }
@@ -991,42 +969,62 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
   const handleSend = async () => {
     if (!input.trim() || loading) return;
     vibrate();
-    const modelMsgId = `msg_${Date.now()}_m`;
-    const newMessages = [...session.messages, 
-      { id: `msg_${Date.now()}_u`, role: "user", text: input, personaId: activePersonaId, timestamp: Date.now() }, 
-      { id: modelMsgId, role: "model", text: "", timestamp: Date.now(), isGenerating: true, versions: [], currentVersionIndex: 0 }
-    ];
-    onUpdateSession({ ...session, messages: newMessages, lastActive: Date.now() });
+    
+    const userMsgId = generateId("msg_u_");
+    const modelMsgId = generateId("msg_m_");
+    
+    const userMsg: Message = { id: userMsgId, role: "user", text: input.trim(), personaId: activePersonaId, timestamp: Date.now() };
+    const modelMsg: Message = { id: modelMsgId, role: "model", text: "", timestamp: Date.now(), isGenerating: true, versions: [], currentVersionIndex: 0 };
+    
+    const intermediateMessages = [...session.messages, userMsg, modelMsg];
+    onUpdateSession({ ...session, messages: intermediateMessages, lastActive: Date.now() });
+    
     setInput("");
     setLoading(true);
+    
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const currentPersona = personas.find((p: any) => p.id === activePersonaId) || personas[0];
+      const currentPersona = personas.find((p: Persona) => p.id === activePersonaId) || personas[0];
       const systemPrompt = getEnhancedSystemPrompt(character, currentPersona);
       
-      const history = newMessages.filter(m => !m.isGenerating).map(m => ({ role: m.role as any, parts: [{ text: m.text }] }));
+      const chatHistory = intermediateMessages
+        .filter(m => !m.isGenerating && (m.role === 'user' || m.role === 'model'))
+        .map(m => ({ role: m.role as any, parts: [{ text: m.text }] }));
       
-      const response = await ai.models.generateContentStream({ 
+      const stream = await ai.models.generateContentStream({ 
         model: "gemini-3-flash-preview", 
-        contents: history,
+        contents: chatHistory,
         config: { 
           systemInstruction: systemPrompt, 
           temperature: 0.95,
-          thinkingConfig: { thinkingBudget: character.maturityLevel === 'unrestricted' ? 8000 : 2000 }
+          thinkingConfig: { thinkingBudget: character.maturityLevel === 'unrestricted' ? 12000 : 4000 }
         }
       });
 
       let fullText = "";
-      for await (const chunk of response) { 
+      for await (const chunk of stream) { 
         if (chunk.text) { 
           fullText += chunk.text; 
-          onUpdateSession({ ...session, messages: newMessages.map(m => m.id === modelMsgId ? { ...m, text: fullText } : m) }); 
+          onUpdateSession({ 
+            ...session, 
+            messages: intermediateMessages.map(m => m.id === modelMsgId ? { ...m, text: fullText } : m) 
+          }); 
         } 
       }
-      onUpdateSession({ ...session, messages: newMessages.map(m => m.id === modelMsgId ? { ...m, text: fullText, isGenerating: false, versions: [fullText], currentVersionIndex: 0 } : m) });
+      
+      onUpdateSession({ 
+        ...session, 
+        messages: intermediateMessages.map(m => 
+          m.id === modelMsgId ? { ...m, text: fullText, isGenerating: false, versions: [fullText], currentVersionIndex: 0 } : m
+        ) 
+      });
     } catch (e) { 
-      console.error(e);
-      setAppToast?.("Neural disconnect.");
+      console.error("Chat Error:", e);
+      setAppToast?.("System error.");
+      onUpdateSession({ 
+        ...session, 
+        messages: intermediateMessages.map(m => m.id === modelMsgId ? { ...m, isGenerating: false, text: "*Static crackles through the link. The response is lost.*" } : m) 
+      });
     } finally { 
       setLoading(false); 
     }
@@ -1053,21 +1051,21 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
               {character.name} 
               <button onClick={() => setShowChatMenu(!showChatMenu)} className="p-0.5"><MoreVertical size={14} className="text-slate-700" /></button>
             </div>
-            <div className="text-[8px] text-primary font-black uppercase tracking-widest">{loading ? 'Typing...' : 'Active'}</div>
+            <div className="text-[8px] text-primary font-black uppercase tracking-widest">{loading ? 'Processing...' : 'Online'}</div>
           </div>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-6 no-scrollbar pb-24 z-10" ref={scrollRef}>
         <div className="max-w-4xl mx-auto w-full space-y-8">
-          {session.messages.map((msg: any) => (
-            <div key={msg.id} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+          {session.messages.map((msg: Message) => (
+            <div key={msg.id} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in duration-300`}>
               <div className={`flex max-w-[92%] gap-2.5 items-start ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                 {msg.role === 'model' && <AbstractAvatar name={character.name} colorClass={character.color} seed={character.seed} size="sm" initial={character.initial} className="mt-1" />}
                 <div className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                    <div className="flex items-center gap-1.5 mb-0.5 px-1.5">
                       <span className="text-[8px] font-black text-slate-600 uppercase">
-                        {msg.role === 'user' ? (personas.find((p: any) => p.id === msg.personaId)?.name || 'You') : character.name}
+                        {msg.role === 'user' ? (personas.find((p: Persona) => p.id === msg.personaId)?.name || 'You') : character.name}
                       </span>
                    </div>
                    
@@ -1076,7 +1074,7 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
                      (msg.role === 'system' ? 'bg-white/5 border border-white/10 text-slate-600 rounded-xl italic text-[11px]' : 
                      'bg-[#1a1a1a]/80 backdrop-blur-md text-slate-200 border border-white/5 rounded-tl-none')}`}>
                       
-                      {msg.text.split('\n').map((l:any, i:any) => (
+                      {msg.text.split('\n').map((l, i) => (
                         <p key={i} className={`mb-1.5 last:mb-0 leading-relaxed ${l.startsWith('*') ? 'text-slate-500 italic font-medium' : ''}`}>
                           {l}
                         </p>
@@ -1089,7 +1087,7 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
                            <button onClick={() => playVoice(msg.id, msg.text)} className={`p-1 rounded-full hover:bg-white/10 ${isSpeaking === msg.id ? 'text-primary animate-pulse' : 'text-slate-700'}`}>
                              <Volume2 size={12} />
                            </button>
-                           <button onClick={() => regenerateMessage(msg.id)} className="p-1 rounded-full hover:bg-white/10 text-slate-700" title="Generate alternate (up to 100)">
+                           <button onClick={() => regenerateMessage(msg.id)} className="p-1 rounded-full hover:bg-white/10 text-slate-700" title="Cycle Resonance">
                              <RefreshCw size={12} />
                            </button>
                            {msg.versions && msg.versions.length > 1 && (
@@ -1116,19 +1114,19 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
       </div>
 
       <div className="bg-[#121212]/60 backdrop-blur-3xl border-t border-white/5 p-3 pb-8 z-20">
-        <div className="max-w-4xl mx-auto w-full flex items-end gap-2 bg-[#1a1a1a]/80 p-2.5 rounded-[2rem] border border-white/10 shadow-xl">
+        <div className="max-w-4xl mx-auto w-full flex items-end gap-2 bg-[#1a1a1a]/80 p-2.5 rounded-[2rem] border border-white/10 shadow-xl ring-1 ring-white/5">
           <textarea 
             value={input} 
             onChange={e => setInput(e.target.value)} 
-            placeholder={`Echo...`} 
-            className="flex-1 bg-transparent border-none focus:outline-none text-white text-sm py-1 px-3 resize-none font-medium leading-relaxed placeholder:text-slate-700" 
+            placeholder={`Echo into the void...`} 
+            className="flex-1 bg-transparent border-none focus:outline-none text-white text-sm py-1.5 px-3 resize-none font-medium leading-relaxed placeholder:text-slate-700 min-h-[36px] max-h-[120px] no-scrollbar" 
             rows={1} 
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
           />
           <button 
             onClick={() => handleSend()} 
             disabled={!input.trim() || loading} 
-            className={`p-3 rounded-2xl transition-all ${input.trim() ? 'bg-primary text-white shadow-lg active:scale-95' : 'bg-white/5 text-slate-800'}`}
+            className={`p-3 rounded-full transition-all flex-none ${input.trim() ? 'bg-primary text-white shadow-lg active:scale-95' : 'bg-white/5 text-slate-800'}`}
           >
             <Send size={18} />
           </button>
@@ -1139,8 +1137,8 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
         <div className="fixed inset-0 z-[110] flex items-start justify-end p-4 pt-20" onClick={() => setShowChatMenu(false)}>
             <div className="w-56 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
                 <button onClick={() => { setShowPersonaShift(true); setShowChatMenu(false); vibrate(); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-primary"><UserPlus size={16} /> Shift Form</button>
-                <button onClick={() => { setAppToast?.("Wiping memory..."); onUpdateSession({...session, messages: []}); setShowChatMenu(false); vibrate(); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-red-500"><History size={16} /> Clear Feed</button>
-                <button onClick={() => setShowChatMenu(false)} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase text-white"><X size={16} /> Close</button>
+                <button onClick={() => { setAppToast?.("Thread Purged"); onUpdateSession({...session, messages: []}); setShowChatMenu(false); vibrate(); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-red-500"><History size={16} /> Wipe History</button>
+                <button onClick={() => setShowChatMenu(false)} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase text-white"><X size={16} /> Close Menu</button>
             </div>
         </div>
       )}
@@ -1152,9 +1150,9 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
                 <h3 className="text-base font-black uppercase tracking-tighter text-white">Select Resonance</h3>
               </div>
               <div className="max-h-[260px] overflow-y-auto p-3 space-y-2 no-scrollbar">
-                {personas.map((p: any) => (
+                {personas.map((p: Persona) => (
                   <button key={p.id} onClick={() => { setActivePersonaId(p.id); setShowPersonaShift(false); vibrate(15); }}
-                    className={`w-full p-4 rounded-xl text-left flex items-center justify-between transition-all ${activePersonaId === p.id ? 'bg-primary text-white' : 'bg-white/5 text-slate-500 hover:bg-white/10'}`}>
+                    className={`w-full p-4 rounded-xl text-left flex items-center justify-between transition-all ${activePersonaId === p.id ? 'bg-primary text-white shadow-lg' : 'bg-white/5 text-slate-500 hover:bg-white/10'}`}>
                     <div>
                       <div className="font-black text-sm leading-tight">{p.name}</div>
                       <div className="text-[9px] opacity-60 truncate max-w-[140px]">{p.bio}</div>
