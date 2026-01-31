@@ -44,7 +44,8 @@ import {
   Eye,
   EyeOff,
   AlertCircle,
-  BookOpen
+  BookOpen,
+  Share2
 } from "lucide-react";
 
 // Import character data and type
@@ -141,6 +142,25 @@ const renderFormattedText = (text: string) => {
     }
     return part;
   });
+};
+
+const handleShareApp = async (setToast: (m: string) => void) => {
+  const shareData = {
+    title: 'Moonai',
+    text: 'Check out Moonai for unrestricted character roleplay and deep AI conversations!',
+    url: window.location.origin
+  };
+
+  try {
+    if (navigator.share) {
+      await navigator.share(shareData);
+    } else {
+      await navigator.clipboard.writeText(window.location.href);
+      setToast("App Link Copied");
+    }
+  } catch (err) {
+    console.error('Error sharing:', err);
+  }
 };
 
 // --- Components ---
@@ -365,7 +385,7 @@ const App = () => {
       case "create": return <CreateView initialMode={createViewMode} userProfile={userProfile} onAddCharacters={(newChars: Character[]) => setCharacters([...newChars, ...characters])} onCreateCharacter={(c: any) => { setCharacters([c, ...characters]); setAppToast("Identity Manifested"); setActiveTab("library"); }} onCreatePersona={(p: any) => { setPersonas([p, ...personas]); setAppToast("Persona Formed"); setActiveTab("profile"); }} onBack={() => setActiveTab('for_you')} />;
       case "library": return <LibraryView characters={characters} personas={personas} userProfile={userProfile} onEditCharacter={(c: Character) => setEditingCharacterId(c.id)} />;
       case "profile": return <ProfileView personas={personas} activePersonaId={activePersonaId} setActivePersonaId={(id: string) => { setActivePersonaId(id); const p = personas.find(pers => pers.id === id); if (p) setAppToast(`Manifested: ${p.name}`); }} chats={chats} updatePersona={(p: Persona) => setPersonas(prev => prev.map(o => o.id === p.id ? p : o))} userProfile={userProfile} setUserProfile={setUserProfile} onDeletePersona={(id: string) => setPersonas(personas.filter(p => p.id !== id))} />;
-      case "settings": return <SettingsView onClearData={clearAllData} userProfile={userProfile} />;
+      case "settings": return <SettingsView onClearData={clearAllData} userProfile={userProfile} setAppToast={setAppToast} />;
       default: return <ForYouView characters={characters} onStartChat={startChat} onCustomize={setEditingCharacterId} />;
     }
   };
@@ -870,15 +890,35 @@ const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfil
   );
 };
 
-const SettingsView = ({ onClearData, userProfile }: any) => (
+const SettingsView = ({ onClearData, userProfile, setAppToast }: any) => (
   <div className="p-4 max-w-lg mx-auto w-full pb-24">
-    <h1 className="text-2xl font-black mb-6 uppercase tracking-tighter">Core Settings</h1>
-    <div className="bg-[#1a1a1a] rounded-2xl overflow-hidden border border-white/5 p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-black uppercase tracking-widest text-slate-400">Tactile Haptics</span>
-        <button className="w-10 h-5 bg-primary rounded-full relative"><div className="absolute right-1 top-1 w-3 h-3 bg-white rounded-full"></div></button>
-      </div>
-      <button onClick={onClearData} className="w-full py-3 bg-red-600/10 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest mt-6">Emergency Purge</button>
+    <h1 className="text-2xl font-black mb-6 uppercase tracking-tighter text-white">Core Settings</h1>
+    <div className="bg-[#1a1a1a] rounded-[2.5rem] overflow-hidden border border-white/5 p-6 space-y-6 shadow-2xl">
+      <section className="space-y-4">
+        <h3 className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Interface</h3>
+        <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+          <span className="text-xs font-black uppercase tracking-widest text-slate-300">Tactile Haptics</span>
+          <button className="w-10 h-5 bg-primary rounded-full relative"><div className="absolute right-1 top-1 w-3 h-3 bg-white rounded-full"></div></button>
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <h3 className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Social</h3>
+        <button 
+          onClick={() => { vibrate(); handleShareApp(setAppToast); }}
+          className="w-full flex items-center justify-between p-4 bg-primary/10 hover:bg-primary/20 text-primary rounded-2xl border border-primary/20 transition-all active:scale-95"
+        >
+          <div className="flex items-center gap-3">
+            <Share2 size={18} />
+            <span className="text-xs font-black uppercase tracking-widest">Spread Moonai</span>
+          </div>
+          <ChevronRight size={16} />
+        </button>
+      </section>
+      
+      <section className="pt-4 border-t border-white/5">
+        <button onClick={onClearData} className="w-full py-4 bg-red-600/10 hover:bg-red-600/20 text-red-600 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95">Emergency Purge</button>
+      </section>
     </div>
   </div>
 );
@@ -1197,6 +1237,7 @@ STRICT ROLEPLAY RULES:
         <div className="fixed inset-0 z-[110] flex items-start justify-end p-4 pt-20" onClick={() => setShowChatMenu(false)}>
             <div className="w-56 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
                 <button onClick={() => { setShowPersonaShift(true); setShowChatMenu(false); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-primary"><UserPlus size={16} /> Shift Persona</button>
+                <button onClick={() => { handleShareApp(setAppToast); setShowChatMenu(false); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-slate-400"><Share2 size={16} /> Share App</button>
                 <button onClick={() => { onUpdateSession((prev: ChatSession) => ({...prev, messages: []})); setShowChatMenu(false); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase text-red-500"><History size={16} /> Wipe History</button>
             </div>
         </div>
