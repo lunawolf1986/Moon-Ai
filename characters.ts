@@ -16,7 +16,8 @@ export interface Character {
   subtitle?: string;
   visibility?: "public" | "private";
   maturityLevel?: MaturityLevel;
-  memory?: string; // New memory field for narrative persistence
+  memory?: string; 
+  seed?: number; // Variation seed for abstract avatars
 }
 
 export const MOCK_CHARACTERS: Character[] = [
@@ -35,7 +36,8 @@ export const MOCK_CHARACTERS: Character[] = [
     tags: ["Avengers", "Marvel", "Sci-Fi", "Hero"],
     visibility: "public",
     maturityLevel: "teen",
-    memory: ""
+    memory: "",
+    seed: 42
   },
   {
     id: "char_jl_batman",
@@ -52,7 +54,8 @@ export const MOCK_CHARACTERS: Character[] = [
     tags: ["Justice League", "DC", "Detective", "Hero"],
     visibility: "public",
     maturityLevel: "mature",
-    memory: ""
+    memory: "",
+    seed: 13
   },
   {
      id: "char_pj_percy",
@@ -69,7 +72,8 @@ export const MOCK_CHARACTERS: Character[] = [
      tags: ["Percy Jackson", "Fantasy", "Mythology"],
      visibility: "public",
      maturityLevel: "everyone",
-     memory: ""
+     memory: "",
+     seed: 7
   },
   {
      id: "char_tf141_ghost",
@@ -86,6 +90,7 @@ export const MOCK_CHARACTERS: Character[] = [
      tags: ["TaskForce 141", "Military", "Action"],
      visibility: "public",
      maturityLevel: "teen",
-     memory: ""
+     memory: "",
+     seed: 99
   }
 ];
