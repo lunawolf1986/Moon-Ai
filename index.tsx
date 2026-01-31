@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { createRoot } from "react-dom/client";
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI, Modality, Type } from "@google/genai";
 import {
   MessageSquare,
   User,
@@ -32,7 +32,19 @@ import {
   ChevronRightCircle,
   Dices,
   History,
-  Info
+  Info,
+  Layers,
+  Download,
+  ArrowLeft,
+  ArrowRight,
+  Plus,
+  Wand2,
+  Copy,
+  Ghost,
+  Eye,
+  EyeOff,
+  AlertCircle,
+  BookOpen
 } from "lucide-react";
 
 // Import character data and type
@@ -83,33 +95,39 @@ const vibrate = (ms: number = 10) => {
   if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(ms);
 };
 
-function decode(base64: string) {
-  const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-}
+const getHexFromBgClass = (bgClass: string): string => {
+  const colorMap: Record<string, string> = {
+    "bg-red-600": "#dc2626",
+    "bg-orange-600": "#ea580c",
+    "bg-amber-600": "#d97706",
+    "bg-yellow-600": "#ca8a04",
+    "bg-lime-600": "#65a30d",
+    "bg-green-600": "#16a34a",
+    "bg-emerald-600": "#059669",
+    "bg-teal-600": "#0d9488",
+    "bg-cyan-600": "#0891b2",
+    "bg-sky-600": "#0284c7",
+    "bg-blue-600": "#2563eb",
+    "bg-indigo-600": "#4f46e5",
+    "bg-violet-600": "#7c3aed",
+    "bg-purple-600": "#9333ea",
+    "bg-fuchsia-600": "#c026d3",
+    "bg-pink-600": "#db2777",
+    "bg-rose-600": "#e11d48",
+    "bg-slate-700": "#334155",
+    "bg-stone-700": "#44403c",
+    "bg-stone-600": "#57534e",
+    "bg-zinc-800": "#27272a",
+    "bg-slate-800": "#1e293b"
+  };
+  return colorMap[bgClass] || "#3b82f6";
+};
 
-async function decodeAudioData(
-  data: Uint8Array,
-  ctx: AudioContext,
-  sampleRate: number,
-  numChannels: number,
-): Promise<AudioBuffer> {
-  const dataInt16 = new Int16Array(data.buffer);
-  const frameCount = dataInt16.length / numChannels;
-  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-  for (let channel = 0; channel < numChannels; channel++) {
-    const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) {
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
-    }
-  }
-  return buffer;
-}
+// Replace {{user}} with persona name
+const replaceUserPlaceholder = (text: string | undefined, personaName: string) => {
+  if (!text) return "";
+  return text.replace(/\{\{user\}\}/gi, personaName);
+};
 
 // --- Components ---
 
@@ -174,24 +192,42 @@ const DEFAULT_PERSONAS: Persona[] = [
   }
 ];
 
-const CharacterCard: React.FC<{ character: Character, onStartChat: (id: string) => void }> = ({ character, onStartChat }) => (
+const CharacterCard: React.FC<{ 
+  character: Character, 
+  onStartChat: (id: string) => void, 
+  onCustomize: (id: string) => void 
+}> = ({ character, onStartChat, onCustomize }) => (
   <div className="bg-[#1a1a1a] rounded-3xl p-3 shadow-xl border border-white/5 flex flex-col gap-2 hover:border-primary/40 transition-all group active:scale-[0.98]">
     <div className="flex items-start justify-between">
       <AbstractAvatar name={character.name} colorClass={character.color} seed={character.seed} size="md" initial={character.initial} />
-      <button onClick={() => onStartChat(character.id)} className="bg-primary/10 text-primary hover:bg-primary hover:text-white px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest transition-all">Chat</button>
-    </div>
-    <div>
-      <div className="flex items-center gap-1.5 mb-0.5">
-        <h3 className="font-black text-base text-white group-hover:text-primary transition-colors">{character.name}</h3>
-        {character.maturityLevel === 'unrestricted' && <span className="text-[7px] font-black bg-purple-600/30 text-purple-200 px-1 py-0.5 rounded border border-purple-500/30">X</span>}
+      <div className="flex items-center gap-1.5">
+        <button 
+          onClick={(e) => { e.stopPropagation(); onCustomize(character.id); }} 
+          className="p-2.5 bg-white/5 text-primary hover:bg-primary/20 hover:text-white rounded-full transition-all flex items-center justify-center ring-1 ring-white/10" 
+          title="Edit Character"
+        >
+          <Pencil size={14} strokeWidth={3} />
+        </button>
+        <button 
+          onClick={() => onStartChat(character.id)} 
+          className="bg-primary/10 text-primary hover:bg-primary hover:text-white px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest transition-all"
+        >
+          Chat
+        </button>
       </div>
-      {character.subtitle && <p className="text-primary/70 text-[9px] font-black uppercase tracking-widest mb-0.5 italic">{character.subtitle}</p>}
+    </div>
+    <div className="flex-1">
+      <div className="flex items-center gap-1.5 mb-0.5">
+        <h3 className="font-black text-base text-white group-hover:text-primary transition-colors truncate">{character.name}</h3>
+        {character.maturityLevel === 'unrestricted' && <span className="text-[7px] font-black bg-purple-600/30 text-purple-200 px-1 py-0.5 rounded border border-purple-500/30 flex-none">X</span>}
+      </div>
+      {character.subtitle && <p className="text-primary/70 text-[9px] font-black uppercase tracking-widest mb-0.5 italic truncate">{character.subtitle}</p>}
       <p className="text-slate-400 text-[11px] line-clamp-2 font-medium leading-tight">{character.tagline}</p>
     </div>
     <div className="flex items-center text-[8px] text-slate-500 mt-auto pt-2 border-t border-white/5 uppercase font-bold tracking-widest">
-      <span className="text-slate-400">{character.creator}</span>
+      <span className="text-slate-400 truncate max-w-[60px]">{character.creator}</span>
       <span className="mx-1.5 opacity-30">•</span>
-      <span>{character.engagement}</span>
+      <span className="truncate">{character.engagement}</span>
     </div>
   </div>
 );
@@ -232,18 +268,10 @@ const App = () => {
     if (existing) {
       setActiveChatId(existing.id);
     } else {
-      const char = characters.find(c => c.id === charId);
       const newChat: ChatSession = {
         id: generateId("chat_"),
         characterId: charId,
-        messages: char?.greeting ? [{
-            id: generateId("msg_"),
-            role: "model",
-            text: char.greeting,
-            versions: [char.greeting], 
-            currentVersionIndex: 0,
-            timestamp: Date.now()
-        }] : [],
+        messages: [], 
         lastActive: Date.now()
       };
       setChats([newChat, ...chats]);
@@ -252,7 +280,7 @@ const App = () => {
   };
 
   const clearAllData = () => {
-    if (confirm("Are you sure? This will reset all characters, personas, and chats to default.")) {
+    if (confirm("Are you sure? This will reset everything.")) {
       localStorage.clear();
       window.location.reload();
     }
@@ -280,7 +308,13 @@ const App = () => {
                }
             }}
             onBack={() => setActiveChatId(null)}
-            onUpdateSession={(updatedSession: ChatSession) => { setChats(prev => prev.map(c => c.id === updatedSession.id ? updatedSession : c)); }}
+            onUpdateSession={(updatedSession: ChatSession | ((prev: ChatSession) => ChatSession)) => { 
+              if (typeof updatedSession === 'function') {
+                setChats(prev => prev.map(c => c.id === session.id ? updatedSession(c) : c));
+              } else {
+                setChats(prev => prev.map(c => c.id === updatedSession.id ? updatedSession : c)); 
+              }
+            }}
             onUpdateCharacter={(updates: Partial<Character>) => { setCharacters(prev => prev.map(c => c.id === character.id ? { ...c, ...updates } : c)); }}
             onDeleteChat={(id: string) => { setChats(prev => prev.filter(c => c.id !== id)); setActiveChatId(null); }}
             onCreatePersona={() => { setCreateViewMode("persona"); setActiveChatId(null); setActiveTab("create"); }}
@@ -298,41 +332,49 @@ const App = () => {
            initialData={char} 
            userProfile={userProfile} 
            onSave={(data) => {
-             setCharacters(prev => prev.map(c => c.id === editingCharacterId ? { ...c, ...data } : c));
+             setCharacters(prev => prev.map(c => c.id === editingCharacterId ? { ...c, ...data, creator: userProfile.handle } : c));
              setEditingCharacterId(null);
-             setAppToast("Core Updated");
+             setAppToast("Manifestation Anchored");
            }} 
            onCancel={() => setEditingCharacterId(null)} 
+           personas={personas}
+           activePersonaId={activePersonaId}
          />;
        }
     }
 
     switch (activeTab) {
-      case "for_you": return <ForYouView characters={characters} onStartChat={startChat} />;
-      case "featured": return <FeaturedView characters={characters} onStartChat={startChat} />;
-      case "explore": return <ExploreView characters={characters} onStartChat={startChat} />;
+      case "for_you": return <ForYouView characters={characters} onStartChat={startChat} onCustomize={setEditingCharacterId} />;
+      case "featured": return <FeaturedView characters={characters} onStartChat={startChat} onCustomize={setEditingCharacterId} />;
+      case "explore": return <ExploreView characters={characters} onStartChat={startChat} onCustomize={setEditingCharacterId} />;
       case "chat": return <ChatListView chats={chats} characters={characters} onOpenChat={setActiveChatId} onDeleteChat={(id: string) => setChats(chats.filter(c => c.id !== id))} />;
-      case "create": return <CreateView initialMode={createViewMode} userProfile={userProfile} onCreateCharacter={(c: any) => { setCharacters([c, ...characters]); setAppToast("Identity Manifested"); setActiveTab("library"); }} onCreatePersona={(p: any) => { setPersonas([p, ...personas]); setAppToast("Persona Formed"); setActiveTab("profile"); }} onBack={() => setActiveTab('for_you')} />;
+      case "create": return <CreateView initialMode={createViewMode} userProfile={userProfile} onAddCharacters={(newChars: Character[]) => setCharacters([...newChars, ...characters])} onCreateCharacter={(c: any) => { setCharacters([c, ...characters]); setAppToast("Identity Manifested"); setActiveTab("library"); }} onCreatePersona={(p: any) => { setPersonas([p, ...personas]); setAppToast("Persona Formed"); setActiveTab("profile"); }} onBack={() => setActiveTab('for_you')} />;
       case "library": return <LibraryView characters={characters} personas={personas} userProfile={userProfile} onEditCharacter={(c: Character) => setEditingCharacterId(c.id)} />;
       case "profile": return <ProfileView personas={personas} activePersonaId={activePersonaId} setActivePersonaId={(id: string) => { setActivePersonaId(id); const p = personas.find(pers => pers.id === id); if (p) setAppToast(`Manifested: ${p.name}`); }} chats={chats} updatePersona={(p: Persona) => setPersonas(prev => prev.map(o => o.id === p.id ? p : o))} userProfile={userProfile} setUserProfile={setUserProfile} onDeletePersona={(id: string) => setPersonas(personas.filter(p => p.id !== id))} />;
       case "settings": return <SettingsView onClearData={clearAllData} userProfile={userProfile} />;
-      default: return <ForYouView characters={characters} onStartChat={startChat} />;
+      default: return <ForYouView characters={characters} onStartChat={startChat} onCustomize={setEditingCharacterId} />;
     }
   };
 
   return (
-    <div className="flex flex-col h-screen bg-[#121212] text-[#e0e0e0] font-sans overflow-hidden">
+    <div className="flex flex-col h-[100dvh] bg-[#121212] text-[#e0e0e0] font-sans overflow-hidden">
       {!activeChatId && !editingCharacterId && (
-        <div className="h-14 px-4 border-b border-white/5 flex items-center justify-between bg-[#121212]/80 backdrop-blur-xl z-50">
-          <div className="flex items-center gap-2">
-             <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center font-black text-white shadow-lg shadow-primary/20">M</div>
-             <h1 className="text-lg font-black tracking-tighter uppercase text-white">Moonai</h1>
+        <div className="h-14 flex-none border-b border-white/5 bg-[#121212]/80 backdrop-blur-xl z-50">
+          <div className="max-w-screen-xl mx-auto h-full px-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+               <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center font-black text-white shadow-lg shadow-primary/20">M</div>
+               <h1 className="text-lg font-black tracking-tighter uppercase text-white">Moonai</h1>
+            </div>
+            <button className="p-2 text-slate-500 hover:text-white transition-colors"><Search size={18} /></button>
           </div>
-          <button className="p-2 text-slate-500 hover:text-white transition-colors"><Search size={18} /></button>
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto no-scrollbar relative">{renderTabContent()}</div>
+      <div className="flex-1 overflow-y-auto no-scrollbar relative">
+        <div className={`h-full ${!activeChatId && !editingCharacterId ? 'max-w-screen-xl mx-auto' : ''}`}>
+          {renderTabContent()}
+        </div>
+      </div>
       
       {appToast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-primary text-white text-[10px] font-bold px-4 py-2 rounded-full shadow-2xl flex items-center gap-1.5 animate-in slide-in-from-top-4 duration-300">
@@ -341,9 +383,9 @@ const App = () => {
       )}
       
       {!activeChatId && !editingCharacterId && (
-        <div className="h-16 bg-[#1a1a1a]/90 backdrop-blur-md border-t border-white/5 flex-none z-50">
-          <div className="flex items-center justify-center h-full">
-            <div className="flex items-center h-full overflow-x-auto no-scrollbar px-4 space-x-0.5">
+        <div className="h-16 flex-none bg-[#1a1a1a]/90 backdrop-blur-md border-t border-white/5 z-50">
+          <div className="max-w-screen-xl mx-auto h-full flex items-center justify-center">
+            <div className="flex items-center h-full overflow-x-auto no-scrollbar px-4 space-x-0.5 md:space-x-4">
               <NavItem id="for_you" label="For You" icon={Sparkles} active={activeTab} set={handleNav} />
               <NavItem id="featured" label="Featured" icon={Star} active={activeTab} set={handleNav} />
               <NavItem id="explore" label="Explore" icon={Compass} active={activeTab} set={handleNav} />
@@ -368,40 +410,42 @@ const NavItem = ({ id, label, icon: Icon, active, set }: any) => (
   </button>
 );
 
-const ForYouView = ({ characters, onStartChat }: { characters: Character[], onStartChat: (id: string) => void }) => (
-  <div className="max-w-6xl mx-auto p-4 pb-20 space-y-6">
+const ForYouView = ({ characters, onStartChat, onCustomize }: any) => (
+  <div className="p-4 pb-20 space-y-6">
     <header className="mt-2 mb-1">
-      <h1 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-br from-blue-300 via-white to-blue-300 tracking-tighter">Ready for more?</h1>
-      <p className="text-slate-500 font-bold text-[9px] uppercase tracking-widest mt-1 opacity-60 italic">Echo through the multiverse</p>
+      <h1 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-br from-blue-300 via-white to-blue-300 tracking-tighter">Neural Harvest</h1>
+      <p className="text-slate-500 font-bold text-[9px] uppercase tracking-widest mt-1 opacity-60 italic">Displaying top manifestations</p>
     </header>
     <section>
-      <h2 className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mb-3 px-1 flex items-center gap-1.5"><Zap size={12} className="fill-primary" /> Pick of the day</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{characters.slice(0, 2).map((c: Character) => <CharacterCard key={c.id} character={c} onStartChat={onStartChat} />)}</div>
-    </section>
-    <section>
-      <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-3 px-1">Recent Additions</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">{characters.slice(2).map((c: Character) => <CharacterCard key={c.id} character={c} onStartChat={onStartChat} />)}</div>
+      <h2 className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mb-3 px-1 flex items-center gap-1.5"><Zap size={12} className="fill-primary" /> Daily Cluster</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {characters.slice(0, 100).map((c: Character) => <CharacterCard key={c.id} character={c} onStartChat={onStartChat} onCustomize={onCustomize} />)}
+      </div>
     </section>
   </div>
 );
 
-const FeaturedView = ({ characters, onStartChat }: { characters: Character[], onStartChat: (id: string) => void }) => (
-  <div className="max-w-6xl mx-auto p-4 pb-20">
-    <h1 className="text-2xl font-black mb-6 uppercase tracking-tighter text-white">Originals</h1>
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{characters.map((c: Character) => <CharacterCard key={c.id} character={c} onStartChat={onStartChat} />)}</div>
+const FeaturedView = ({ characters, onStartChat, onCustomize }: any) => (
+  <div className="p-4 pb-20">
+    <h1 className="text-2xl font-black mb-6 uppercase tracking-tighter text-white">Verified Archetypes</h1>
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      {characters.slice(0, 100).map((c: Character) => <CharacterCard key={c.id} character={c} onStartChat={onStartChat} onCustomize={onCustomize} />)}
+    </div>
   </div>
 );
 
-const ExploreView = ({ characters, onStartChat }: { characters: Character[], onStartChat: (id: string) => void }) => {
+const ExploreView = ({ characters, onStartChat, onCustomize }: any) => {
   const [search, setSearch] = useState("");
   const filtered = characters.filter((c: Character) => (search === "" || c.name.toLowerCase().includes(search.toLowerCase()) || c.tags.some(t => t.toLowerCase().includes(search.toLowerCase()))));
   return (
-    <div className="max-w-6xl mx-auto p-4 pb-20">
+    <div className="p-4 pb-20">
       <div className="relative mb-6 max-w-2xl mx-auto">
         <Search className="absolute left-3.5 top-3.5 text-slate-600" size={16} />
         <input type="text" placeholder="Search identities..." className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl py-3 pl-10 pr-4 text-white text-sm font-bold focus:outline-none focus:border-primary/50 transition-all placeholder:text-slate-600 shadow-inner" value={search} onChange={e => setSearch(e.target.value)} />
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{filtered.length > 0 ? filtered.map((c: Character) => <CharacterCard key={c.id} character={c} onStartChat={onStartChat} />) : <div className="flex flex-col items-center justify-center py-20 opacity-20"><Search size={40} /><p className="font-bold text-xs mt-2">No results found.</p></div>}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {filtered.slice(0, 100).map((c: Character) => <CharacterCard key={c.id} character={c} onStartChat={onStartChat} onCustomize={onCustomize} />)}
+      </div>
     </div>
   );
 };
@@ -434,158 +478,79 @@ const ChatListView = ({ chats, characters, onOpenChat, onDeleteChat }: any) => {
   );
 };
 
-const CharacterEditor = ({ initialData, onSave, onCancel, mode, userProfile }: { initialData: Partial<Character>, onSave: (data: Partial<Character>) => void, onCancel: () => void, mode: "create" | "edit", userProfile: UserProfile }) => {
-  const [name, setName] = useState(initialData.name || "");
-  const [tagline, setTagline] = useState(initialData.tagline || "");
-  const [subtitle, setSubtitle] = useState(initialData.subtitle || "");
-  const [description, setDescription] = useState(initialData.description || "");
-  const [greeting, setGreeting] = useState(initialData.greeting || "");
-  const [systemInstruction, setSystemInstruction] = useState(initialData.systemInstruction || "");
-  const [memory, setMemory] = useState(initialData.memory || "");
-  const [visibility, setVisibility] = useState<"public" | "private">(initialData.visibility || "public");
-  const [maturity, setMaturity] = useState<MaturityLevel>(initialData.maturityLevel || "teen");
-  const [seed, setSeed] = useState(initialData.seed || Math.floor(Math.random() * 1000));
-  const [color, setColor] = useState(initialData.color || "bg-blue-600");
-  
-  const isEditable = mode === "create" || initialData.creator === userProfile.handle;
+const CreateView = ({ onCreateCharacter, onCreatePersona, onBack, initialMode, userProfile, onAddCharacters }: any) => {
+  const [mode, setMode] = useState<"character" | "persona" | "generate">(initialMode || "character");
+  const [personaName, setPersonaName] = useState("");
+  const [personaBio, setPersonaBio] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
 
-  const THEME_COLORS = [
-    "bg-red-600", "bg-orange-600", "bg-amber-600", "bg-yellow-600", 
-    "bg-lime-600", "bg-green-600", "bg-emerald-600", "bg-teal-600",
-    "bg-cyan-600", "bg-sky-600", "bg-blue-600", "bg-indigo-600",
-    "bg-violet-600", "bg-purple-600", "bg-fuchsia-600", "bg-pink-600",
-    "bg-rose-600", "bg-slate-700", "bg-stone-700", "bg-zinc-800"
-  ];
-
-  const generateNewAvatar = () => {
-    vibrate(15);
-    setSeed(Math.floor(Math.random() * 10000));
+  const neuralHarvest = async () => {
+    vibrate(25);
+    setIsGenerating(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: "Generate 100 extremely diverse and unique character profiles for a chat app. Return them strictly as a JSON array of objects with these fields: name, tagline, subtitle, description, greeting, systemInstruction, color (Tailwind bg- color), maturityLevel (everyone, teen, mature, unrestricted), and tags (array). Ensure characters are high-quality and cinematic.",
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                tagline: { type: Type.STRING },
+                subtitle: { type: Type.STRING },
+                description: { type: Type.STRING },
+                greeting: { type: Type.STRING },
+                systemInstruction: { type: Type.STRING },
+                color: { type: Type.STRING },
+                maturityLevel: { type: Type.STRING },
+                tags: { type: Type.ARRAY, items: { type: Type.STRING } }
+              },
+              required: ["name", "tagline", "subtitle", "description", "greeting", "systemInstruction", "color", "maturityLevel", "tags"]
+            }
+          },
+          thinkingConfig: { thinkingBudget: 0 }
+        }
+      });
+      const data = JSON.parse(response.text || "[]");
+      const mapped = data.map((c: any) => ({
+        id: generateId("gen_"),
+        creator: "@AI_Neural",
+        engagement: "New",
+        initial: c.name[0],
+        seed: Math.floor(Math.random() * 1000),
+        ...c
+      }));
+      onAddCharacters(mapped);
+      onBack();
+    } catch (e) {
+      console.error(e);
+      alert("Neural Harvest interrupted. Try again.");
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-[#121212] flex flex-col animate-in slide-in-from-right duration-300 overflow-hidden font-sans">
-      <div className="h-14 flex items-center justify-between px-4 border-b border-white/10 bg-[#121212]/50 sticky top-0 z-30 backdrop-blur-md">
-        <div className="flex items-center gap-2">
-          <button onClick={onCancel} className="text-slate-400 p-2 hover:text-white transition-colors"><ChevronLeft size={20} /></button>
-          <span className="text-xs font-black uppercase tracking-[0.1em] text-white/90">{mode === 'create' ? 'Manifest Identity' : 'Core Matrix'}</span>
-        </div>
-        {isEditable && (
-          <button onClick={() => { vibrate(); onSave({ name, tagline, subtitle, description, greeting, systemInstruction, memory, visibility, maturityLevel: maturity, seed, color }); }} className="bg-primary text-white font-black text-[9px] uppercase tracking-widest px-4 py-2 rounded-full shadow-lg shadow-primary/20 active:scale-95 transition-all">Save</button>
-        )}
-      </div>
-
-      <div className="flex-1 overflow-y-auto no-scrollbar pb-32 p-4 space-y-8 max-w-xl mx-auto w-full">
-        <div className="flex flex-col items-center gap-4 py-2">
-            <div className="relative group">
-              <AbstractAvatar name={name || "New"} colorClass={color} size="xl" initial={name ? name[0] : "?"} seed={seed} />
-              <button onClick={generateNewAvatar} className="absolute -bottom-1 -right-1 bg-[#1a1a1a] border border-white/10 p-2 rounded-full shadow-xl hover:bg-white/10 text-primary transition-all active:scale-90"><Dices size={14}/></button>
-            </div>
-            <div className="text-center">
-              <h2 className="text-lg font-black text-white uppercase tracking-tighter">{name || "Unnamed Entity"}</h2>
-              
-              <div className="mt-4 w-full flex flex-wrap justify-center gap-1.5 max-w-[240px]">
-                {THEME_COLORS.map(c => (
-                  <button 
-                    key={c} 
-                    onClick={() => setColor(c)}
-                    className={`w-5 h-5 rounded-full border border-white/10 transition-transform ${c} ${color === c ? 'ring-2 ring-primary ring-offset-2 ring-offset-[#121212] scale-110' : 'hover:scale-110'}`}
-                  />
-                ))}
-              </div>
-            </div>
-        </div>
-
-        <div className="space-y-6">
-          <section className="space-y-3">
-            <h3 className="text-[9px] font-black text-slate-600 uppercase tracking-widest px-1">Manifestation Profile</h3>
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <label className="text-[8px] font-black text-slate-700 uppercase ml-2">Display Name</label>
-                <input readOnly={!isEditable} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Tony Stark" className="w-full bg-[#1a1a1a] border border-white/5 rounded-xl p-3 text-sm text-white font-bold outline-none focus:border-primary/30 transition-all" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-[8px] font-black text-slate-700 uppercase ml-2">Short Tagline</label>
-                <input readOnly={!isEditable} value={tagline} onChange={e => setTagline(e.target.value)} placeholder="A short catchphrase..." className="w-full bg-[#1a1a1a] border border-white/5 rounded-xl p-3 text-sm text-white font-bold outline-none focus:border-primary/30 transition-all" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-[8px] font-black text-slate-700 uppercase ml-2">Sub-Role</label>
-                <input readOnly={!isEditable} value={subtitle} onChange={e => setSubtitle(e.target.value)} placeholder="e.g. Iron Man" className="w-full bg-[#1a1a1a] border border-white/5 rounded-xl p-3 text-sm text-white font-bold outline-none focus:border-primary/30 transition-all" />
-              </div>
-            </div>
-          </section>
-
-          <section className="space-y-3">
-            <h3 className="text-[9px] font-black text-slate-600 uppercase tracking-widest px-1">Neural Directives</h3>
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <label className="text-[8px] font-black text-slate-700 uppercase ml-2">Public Bio</label>
-                <textarea readOnly={!isEditable} value={description} onChange={e => setDescription(e.target.value)} placeholder="What everyone knows..." className="w-full bg-[#1a1a1a] border border-white/5 rounded-xl p-3 text-sm text-white h-24 outline-none focus:border-primary/30 transition-all resize-none" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-[8px] font-black text-slate-700 uppercase ml-2">Core Persona Logic (Hidden)</label>
-                <textarea readOnly={!isEditable} value={systemInstruction} onChange={e => setSystemInstruction(e.target.value)} placeholder="Rules, personality, secret lore..." className="w-full bg-[#1a1a1a] border border-white/5 rounded-xl p-3 text-white h-40 outline-none font-mono text-[11px] focus:border-primary/30 transition-all resize-none" />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-[8px] font-black text-slate-700 uppercase ml-2">Inbound Greeting</label>
-                <textarea readOnly={!isEditable} value={greeting} onChange={e => setGreeting(e.target.value)} placeholder="Initial contact message..." className="w-full bg-[#1a1a1a] border border-white/5 rounded-xl p-3 text-sm text-white h-24 outline-none focus:border-primary/30 transition-all resize-none" />
-              </div>
-            </div>
-          </section>
-
-          <section className="space-y-3">
-            <h3 className="text-[9px] font-black text-slate-600 uppercase tracking-widest px-1">Protocols</h3>
-            <div className="grid grid-cols-2 gap-3">
-               <div className="space-y-1.5">
-                 <label className="text-[8px] font-black text-slate-700 uppercase ml-2">Visibility</label>
-                 <select disabled={!isEditable} value={visibility} onChange={e => setVisibility(e.target.value as any)} className="w-full bg-[#1a1a1a] border border-white/5 rounded-xl p-3 text-sm text-white font-bold outline-none appearance-none">
-                   <option value="public">Public</option>
-                   <option value="private">Private</option>
-                 </select>
-               </div>
-               <div className="space-y-1.5">
-                 <label className="text-[8px] font-black text-slate-700 uppercase ml-2">Filters</label>
-                 <select disabled={!isEditable} value={maturity} onChange={e => setMaturity(e.target.value as any)} className="w-full bg-[#1a1a1a] border border-white/5 rounded-xl p-3 text-sm text-white font-bold outline-none appearance-none">
-                   <option value="everyone">Everyone</option>
-                   <option value="teen">Teen</option>
-                   <option value="mature">Mature</option>
-                   <option value="unrestricted">Unrestricted</option>
-                 </select>
-               </div>
-            </div>
-          </section>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const CreateView = ({ onCreateCharacter, onCreatePersona, onBack, initialMode, userProfile }: any) => {
-  const [mode, setMode] = useState<"character" | "persona">(initialMode || "character");
-  const [personaName, setPersonaName] = useState("");
-  const [personaBio, setPersonaBio] = useState("");
-
-  return (
     <div className="flex flex-col h-full bg-[#121212] animate-in fade-in duration-300">
-      <div className="px-4 pt-4 mb-3 flex items-center justify-between">
+      <div className="px-4 pt-4 mb-3 flex items-center justify-between max-w-screen-xl mx-auto w-full">
         <h1 className="text-xl font-black uppercase tracking-tighter">Laboratory</h1>
         <button onClick={onBack} className="p-2 text-slate-600 hover:text-white"><X size={18}/></button>
       </div>
 
-      <div className="flex bg-[#1a1a1a] p-1 rounded-xl mx-4 mb-6 border border-white/10 shadow-inner">
+      <div className="flex bg-[#1a1a1a] p-1 rounded-xl mx-4 mb-6 border border-white/10 shadow-inner max-w-lg md:mx-auto md:w-full">
         <button onClick={() => setMode("character")} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${mode === 'character' ? 'bg-primary text-white shadow-md' : 'text-slate-500'}`}>Character</button>
         <button onClick={() => setMode("persona")} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${mode === 'persona' ? 'bg-primary text-white shadow-md' : 'text-slate-500'}`}>Persona</button>
+        <button onClick={() => setMode("generate")} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${mode === 'generate' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-500'}`}>Harvest</button>
       </div>
 
       <div className="flex-1 overflow-y-auto no-scrollbar">
         {mode === 'character' ? (
-          <CharacterEditor 
-            mode="create" 
-            userProfile={userProfile} 
-            initialData={{ creator: userProfile.handle }} 
-            onCancel={onBack} 
-            onSave={(data) => onCreateCharacter({ id: generateId("char_"), initial: data.name![0].toUpperCase(), color: 'bg-indigo-600', creator: userProfile.handle, engagement: "0", tags: [], ...data })} 
-          />
-        ) : (
+          <CharacterEditor personas={[]} activePersonaId="" mode="create" userProfile={userProfile} initialData={{ creator: userProfile.handle }} onCancel={onBack} onSave={(data: any) => onCreateCharacter({ id: generateId("char_"), initial: data.name![0].toUpperCase(), color: 'bg-indigo-600', creator: userProfile.handle, engagement: "0", tags: [], ...data })} />
+        ) : mode === 'persona' ? (
           <div className="px-4 pb-20 space-y-4 max-w-lg mx-auto w-full">
             <div className="space-y-1.5">
                <label className="text-[8px] font-black text-slate-700 uppercase ml-2">Persona Name</label>
@@ -595,24 +560,18 @@ const CreateView = ({ onCreateCharacter, onCreatePersona, onBack, initialMode, u
                <label className="text-[8px] font-black text-slate-700 uppercase ml-2">Manifest Memory</label>
                <textarea value={personaBio} onChange={e => setPersonaBio(e.target.value)} placeholder="Describe your essence in this dialogue..." className="w-full bg-[#1a1a1a] border border-white/5 p-3 rounded-xl text-sm text-white h-32 outline-none resize-none focus:border-primary/50 transition-all" />
             </div>
-            <button 
-              onClick={() => { 
-                vibrate(); 
-                onCreatePersona({ 
-                  id: generateId("p_"), 
-                  name: personaName, 
-                  bio: personaBio, 
-                  traits: [], 
-                  isPrivate: true, 
-                  avatarColor: "bg-blue-600" 
-                }); 
-                setPersonaName("");
-                setPersonaBio("");
-              }} 
-              disabled={!personaName.trim()} 
-              className="w-full bg-primary text-white font-black py-4 rounded-xl uppercase tracking-widest text-[10px] shadow-lg shadow-primary/20 disabled:opacity-30 disabled:shadow-none transition-all active:scale-95"
-            >
-              Anchor Persona
+            <button onClick={() => { vibrate(); onCreatePersona({ id: generateId("p_"), name: personaName, bio: personaBio, traits: [], isPrivate: true, avatarColor: "bg-blue-600" }); onBack(); }} disabled={!personaName.trim()} className="w-full bg-primary text-white font-black py-4 rounded-xl uppercase tracking-widest text-[10px] shadow-lg shadow-primary/20 disabled:opacity-30 disabled:shadow-none transition-all active:scale-95">Anchor Persona</button>
+          </div>
+        ) : (
+          <div className="px-4 text-center space-y-6 pt-10 pb-20 max-w-xl mx-auto">
+            <div className="w-20 h-20 bg-purple-600/20 text-purple-500 rounded-full flex items-center justify-center mx-auto animate-pulse"><Layers size={40}/></div>
+            <div>
+              <h2 className="text-xl font-black uppercase tracking-tighter">Neural Harvest</h2>
+              <p className="text-xs text-slate-500 mt-2 font-medium">Summon 100 diverse AI-generated identities at once. This protocol uses massive processing power to populate your multiverse library.</p>
+            </div>
+            <button onClick={neuralHarvest} disabled={isGenerating} className="w-full max-w-sm bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-black py-5 rounded-[2rem] uppercase tracking-widest text-xs shadow-xl shadow-purple-500/20 active:scale-95 transition-all flex items-center justify-center gap-3 mx-auto">
+              {isGenerating ? <RefreshCw className="animate-spin" /> : <Download size={18} />}
+              {isGenerating ? "Manifesting 100 Entities..." : "Commence Harvest"}
             </button>
           </div>
         )}
@@ -621,41 +580,248 @@ const CreateView = ({ onCreateCharacter, onCreatePersona, onBack, initialMode, u
   );
 };
 
-const LibraryView = ({ characters, personas, userProfile, onEditCharacter }: any) => (
-  <div className="p-4 max-w-4xl mx-auto w-full pb-20">
-    <h1 className="text-2xl font-black mb-6 uppercase tracking-tighter">Collection</h1>
-    
-    <div className="space-y-8">
-      <section>
-        <h2 className="text-[9px] font-black text-slate-600 uppercase mb-3 tracking-widest flex items-center gap-1.5 px-1">Synthetics</h2>
-        <div className="space-y-2">
-          {characters.filter((c:any) => c.creator === userProfile.handle).map((c:any) => (
-            <div key={c.id} className="bg-[#1a1a1a] p-3 rounded-2xl flex items-center justify-between group border border-white/5 hover:border-primary/20 transition-all">
-              <div className="flex items-center gap-3">
-                <AbstractAvatar name={c.name} colorClass={c.color} seed={c.seed} size="sm" initial={c.initial}/>
-                <div>
-                  <div className="font-bold text-sm text-white leading-tight">{c.name}</div>
-                  <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest">{c.visibility}</div>
+const CharacterEditor = ({ initialData, onSave, onCancel, mode, userProfile, personas, activePersonaId }: { initialData: Partial<Character>, onSave: (data: Partial<Character>) => void, onCancel: () => void, mode: "create" | "edit", userProfile: UserProfile, personas: Persona[], activePersonaId: string }) => {
+  const [name, setName] = useState(initialData.name || "");
+  const [tagline, setTagline] = useState(initialData.tagline || "");
+  const [subtitle, setSubtitle] = useState(initialData.subtitle || "");
+  const [description, setDescription] = useState(initialData.description || "");
+  const [greeting, setGreeting] = useState(initialData.greeting || "");
+  const [systemInstruction, setSystemInstruction] = useState(initialData.systemInstruction || "");
+  const [visibility, setVisibility] = useState<"public" | "private">(initialData.visibility || "public");
+  const [seed, setSeed] = useState(initialData.seed || Math.floor(Math.random() * 1000));
+  const [color, setColor] = useState(initialData.color || "bg-blue-600");
+  const [isGeneratingGreeting, setIsGeneratingGreeting] = useState(false);
+  const [showGreetingTips, setShowGreetingTips] = useState(false);
+  
+  const isDefaultChar = initialData.creator !== userProfile.handle && mode === 'edit';
+  const THEME_COLORS = ["bg-red-600", "bg-orange-600", "bg-amber-600", "bg-yellow-600", "bg-lime-600", "bg-green-600", "bg-emerald-600", "bg-teal-600", "bg-cyan-600", "bg-sky-600", "bg-blue-600", "bg-indigo-600", "bg-violet-600", "bg-purple-600", "bg-fuchsia-600", "bg-pink-600", "bg-rose-600", "bg-slate-700", "bg-stone-700", "bg-zinc-800"];
+
+  const generateGreetingArchitect = async (vibe: string) => {
+    if (!name || isGeneratingGreeting) return;
+    vibrate(25);
+    setIsGeneratingGreeting(true);
+    try {
+      const activePersona = personas.find(p => p.id === activePersonaId);
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const prompt = `Craft a cinematic, immersive opening greeting for a character named ${name}. 
+      Vibe: ${vibe}. 
+      Identity: ${tagline}. 
+      Context: This greeting is directed at a user persona named {{user}} (${activePersona?.bio || "unspecified identity"}).
+      Directives: ${systemInstruction}.
+      
+      Requirements:
+      - Use first-person dialogue.
+      - Describe actions in *asterisks*.
+      - Use {{user}} to refer to the person the character is talking to.
+      - Return ONLY the greeting text with {{user}} included.`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: { temperature: 1.0, thinkingConfig: { thinkingBudget: 0 } }
+      });
+      setGreeting(response.text || "");
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsGeneratingGreeting(false);
+      setShowGreetingTips(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-[#0a0a0a] flex flex-col animate-in slide-in-from-right duration-300 overflow-hidden">
+      {/* HEADER: STYLED LIKE CHARACTER AI */}
+      <div className="h-16 flex items-center justify-between px-4 border-b border-white/5 bg-[#121212] sticky top-0 z-30">
+        <div className="max-w-screen-xl mx-auto w-full flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button onClick={onCancel} className="text-slate-400 p-2 hover:bg-white/5 rounded-full transition-all active:scale-90"><ChevronLeft size={24} /></button>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black uppercase tracking-widest text-primary leading-none mb-1">{mode === 'create' ? 'Creating' : 'Editing'}</span>
+              <h2 className="text-lg font-black text-white uppercase tracking-tighter leading-none">{name || "New Character"}</h2>
+            </div>
+          </div>
+          <button 
+            onClick={() => { vibrate(); onSave({ name, tagline, subtitle, description, greeting, systemInstruction, visibility, seed, color }); }} 
+            className="bg-primary hover:bg-primary/90 text-white font-black text-[10px] uppercase tracking-[0.15em] px-6 py-2.5 rounded-full shadow-xl shadow-primary/20 active:scale-95 transition-all flex items-center gap-2"
+          >
+            <Check size={16} strokeWidth={3} />
+            {isDefaultChar ? 'Save as Own' : 'Save'}
+          </button>
+        </div>
+      </div>
+
+      {/* MAIN CONTENT AREA: TWO-COLUMN (PC) / STACKED (MOBILE) */}
+      <div className="flex-1 overflow-y-auto no-scrollbar pb-24 bg-[#0a0a0a]">
+        <div className="max-w-screen-xl mx-auto w-full p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          
+          {/* LEFT COLUMN: IDENTITY & AVATAR */}
+          <div className="lg:col-span-4 space-y-6">
+            <div className="bg-[#121212] border border-white/5 rounded-[2.5rem] p-8 flex flex-col items-center gap-6 shadow-2xl relative overflow-hidden group">
+              <div className="absolute top-0 left-0 w-full h-1 bg-primary/20"></div>
+              <div className="relative">
+                <AbstractAvatar name={name || "?"} colorClass={color} size="xl" initial={name ? name[0] : "?"} seed={seed} className="ring-4 ring-[#1a1a1a]" />
+                {/* DICE OVERLAY - Functional randomness */}
+                <button 
+                  onClick={() => { 
+                    vibrate(15); 
+                    const newSeed = Math.floor(Math.random() * 10000);
+                    const randomColor = THEME_COLORS[Math.floor(Math.random() * THEME_COLORS.length)];
+                    setSeed(newSeed);
+                    setColor(randomColor);
+                  }} 
+                  className="absolute -bottom-2 -right-2 bg-primary text-white p-3 rounded-full shadow-[0_0_20px_rgba(59,130,246,0.6)] hover:bg-primary/90 hover:scale-110 transition-all active:scale-90 border-4 border-[#121212] z-10 group"
+                  title="Randomize Avatar Manifestation"
+                >
+                  <Dices size={20} className="group-hover:rotate-12 transition-transform" />
+                </button>
+              </div>
+              <div className="w-full space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Name</label>
+                  <input value={name} onChange={e => setName(e.target.value)} placeholder="Tony Stark, Batman..." className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 text-sm text-white font-bold outline-none focus:border-primary/50 transition-all" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Short Tagline</label>
+                  <input value={tagline} onChange={e => setTagline(e.target.value)} placeholder="Genius, Billionaire, Playboy..." className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 text-sm text-white font-medium outline-none focus:border-primary/50 transition-all" />
+                </div>
+                <div className="flex flex-wrap justify-center gap-2 pt-2">
+                  {THEME_COLORS.map(c => <button key={c} onClick={() => setColor(c)} className={`w-6 h-6 rounded-full border border-white/10 transition-all ${c} ${color === c ? 'ring-2 ring-primary ring-offset-2 ring-offset-[#121212] scale-110' : 'hover:scale-110 opacity-40 hover:opacity-100'}`} />)}
                 </div>
               </div>
-              <button onClick={() => onEditCharacter(c)} className="p-2 text-slate-600 hover:text-white transition-colors"><Pencil size={16} /></button>
             </div>
-          ))}
-          {characters.filter((c:any) => c.creator === userProfile.handle).length === 0 && (
-            <div className="py-8 text-center opacity-30 text-[10px] font-bold uppercase tracking-widest">Empty Array</div>
-          )}
-        </div>
-      </section>
 
+            <div className="bg-[#121212] border border-white/5 rounded-[2.5rem] p-6 space-y-4">
+               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Settings size={14}/> Settings</h3>
+               <div className="space-y-3">
+                  <button 
+                    onClick={() => setVisibility(visibility === 'public' ? 'private' : 'public')}
+                    className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all ${visibility === 'public' ? 'bg-primary/5 border-primary/20 text-primary' : 'bg-[#1a1a1a] border-white/5 text-slate-400'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {visibility === 'public' ? <Eye size={18} /> : <EyeOff size={18} />}
+                      <span className="text-xs font-bold uppercase tracking-widest">Visibility: {visibility}</span>
+                    </div>
+                    <div className={`w-10 h-5 rounded-full relative transition-all ${visibility === 'public' ? 'bg-primary' : 'bg-slate-700'}`}>
+                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${visibility === 'public' ? 'right-1' : 'left-1'}`}></div>
+                    </div>
+                  </button>
+               </div>
+            </div>
+          </div>
+
+          {/* RIGHT COLUMN: CORE PROTOCOLS (GREETING, DESCRIPTION, DEFINITION) */}
+          <div className="lg:col-span-8 space-y-8">
+            
+            {/* GREETING SECTION */}
+            <div className="bg-[#121212] border border-white/5 rounded-[2.5rem] p-6 md:p-8 space-y-6 shadow-2xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-black text-white uppercase tracking-tighter flex items-center gap-2"><MessageSquare size={18} className="text-primary"/> Greeting</h3>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">How the conversation starts</p>
+                </div>
+                <div className="relative">
+                  <button 
+                    onClick={() => setShowGreetingTips(!showGreetingTips)}
+                    className={`flex items-center gap-2 text-[9px] font-black uppercase px-4 py-2 rounded-full border border-white/10 hover:bg-white/5 transition-all ${isGeneratingGreeting ? 'animate-pulse text-purple-400 border-purple-400/30' : 'text-primary'}`}
+                  >
+                    <Wand2 size={14} /> AI Architect
+                  </button>
+                  {showGreetingTips && (
+                    <div className="absolute top-11 right-0 w-56 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-3xl z-50 overflow-hidden animate-in zoom-in-95 duration-200">
+                      <div className="p-3 border-b border-white/5 bg-white/5 text-[8px] font-black text-slate-500 uppercase tracking-[0.1em]">Select Creative Vibe</div>
+                      {["Action Packed", "Slow Burn", "Mysterious", "Aggressive", "Warm & Welcoming"].map(v => (
+                        <button key={v} onClick={() => generateGreetingArchitect(v)} className="w-full text-left px-4 py-3 hover:bg-primary/10 hover:text-primary text-[11px] text-white font-bold border-b border-white/5 last:border-0 transition-all">{v}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="relative">
+                <textarea 
+                  value={greeting} 
+                  onChange={e => setGreeting(e.target.value)} 
+                  placeholder="Example: *Tony Stark leans back in his chair, swirling a glass of scotch.* 'So, you finally decided to show up? I was starting to think the world didn't need saving today.' {{user}}..." 
+                  className="w-full bg-[#1a1a1a] border border-white/10 rounded-3xl p-6 text-sm text-white h-56 outline-none resize-none focus:border-primary/50 transition-all font-medium leading-relaxed placeholder:text-slate-700" 
+                />
+                {isGeneratingGreeting && (
+                  <div className="absolute inset-0 bg-black/60 backdrop-blur-sm rounded-3xl flex flex-col items-center justify-center gap-3">
+                    <RefreshCw className="animate-spin text-primary" size={32} />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-primary animate-pulse">Architecting...</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-start gap-2.5 px-2 py-3 bg-blue-600/5 rounded-2xl border border-blue-600/10">
+                <AlertCircle size={16} className="text-primary flex-none mt-0.5" />
+                <p className="text-[10px] text-slate-400 font-medium leading-relaxed">
+                  Pro-tip: Use <span className="text-primary font-black">{"{{user}}"}</span> to refer to the user.
+                </p>
+              </div>
+            </div>
+
+            {/* NEURAL DESCRIPTION SECTION (Long Description) */}
+            <div className="bg-[#121212] border border-white/5 rounded-[2.5rem] p-6 md:p-8 space-y-6 shadow-2xl">
+              <div>
+                <h3 className="text-base font-black text-white uppercase tracking-tighter flex items-center gap-2"><BookOpen size={18} className="text-amber-500"/> Neural Description</h3>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Detailed backstory, appearance, and context</p>
+              </div>
+              <div className="space-y-1.5">
+                <textarea 
+                  value={description} 
+                  onChange={e => setDescription(e.target.value)} 
+                  placeholder="Write a long-form prose description of who this character is, their history, and what they look like. This helps the AI understand the 'soul' of the entity." 
+                  className="w-full bg-[#1a1a1a] border border-white/10 rounded-3xl p-6 text-[13px] text-white h-56 outline-none resize-none focus:border-primary/50 transition-all leading-relaxed placeholder:text-slate-700 font-medium" 
+                />
+              </div>
+            </div>
+
+            {/* NEURAL DEFINITION SECTION (Advanced Logic) */}
+            <div className="bg-[#121212] border border-white/5 rounded-[2.5rem] p-6 md:p-8 space-y-6 shadow-2xl">
+              <div>
+                <h3 className="text-base font-black text-white uppercase tracking-tighter flex items-center gap-2"><Brain size={18} className="text-purple-500"/> Neural Definition</h3>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Example dialogues, speech patterns, and deep-seated motivations</p>
+              </div>
+              <div className="space-y-1.5">
+                <textarea 
+                  value={systemInstruction} 
+                  onChange={e => setSystemInstruction(e.target.value)} 
+                  placeholder="Describe speech patterns, example dialogues, and technical behavioral logic.
+Tony Stark: 'I told you, I don't want to join your boy band.'
+{{user}}: 'It's not a band, Tony.'..." 
+                  className="w-full bg-[#1a1a1a] border border-white/10 rounded-3xl p-6 text-[13px] text-white h-72 outline-none font-mono resize-none focus:border-primary/50 transition-all leading-relaxed placeholder:text-slate-700" 
+                />
+              </div>
+              <div className="flex items-start gap-2.5 px-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-purple-500 mt-1.5"></div>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Advanced parameters for expert-level character crafting.</p>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const LibraryView = ({ characters, userProfile, onEditCharacter }: any) => (
+  <div className="p-4 pb-20">
+    <h1 className="text-2xl font-black mb-6 uppercase tracking-tighter">Identity Archive</h1>
+    <div className="space-y-8">
       <section>
-        <h2 className="text-[9px] font-black text-slate-600 uppercase mb-3 tracking-widest px-1">Manifestations</h2>
-        <div className="space-y-2">
-          {personas.filter((p:any) => p.id !== 'p_default').map((p:any) => (
-            <div key={p.id} className="bg-[#1a1a1a]/50 p-3 rounded-2xl flex items-center gap-3 border border-white/5">
-              <div className={`w-8 h-8 ${p.avatarColor} rounded-full flex items-center justify-center font-black text-xs text-white`}>{p.name[0]}</div>
-              <div className="flex-1">
-                <div className="font-bold text-sm text-white leading-tight">{p.name}</div>
-                <div className="text-[9px] text-slate-500 truncate max-w-[160px]">{p.bio}</div>
+        <h2 className="text-[9px] font-black text-slate-600 uppercase mb-3 tracking-widest flex items-center gap-1.5 px-1">Manifested Entities</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {characters.map((c: any) => (
+            <div key={c.id} className="bg-[#1a1a1a] p-3 rounded-2xl flex items-center justify-between group border border-white/5 hover:border-white/20 transition-all shadow-lg">
+              <div className="flex items-center gap-3 overflow-hidden">
+                <AbstractAvatar name={c.name} colorClass={c.color} seed={c.seed} size="sm" initial={c.initial}/>
+                <div className="overflow-hidden">
+                  <div className="font-bold text-sm text-white leading-tight truncate">{c.name}</div>
+                  <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest truncate">{c.creator === userProfile.handle ? "Your Creation" : c.creator}</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-none">
+                <button onClick={() => onEditCharacter(c)} className="p-2 text-primary hover:text-white transition-colors" title="Customize Core"><Pencil size={18} strokeWidth={3} /></button>
               </div>
             </div>
           ))}
@@ -666,239 +832,71 @@ const LibraryView = ({ characters, personas, userProfile, onEditCharacter }: any
 );
 
 const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfile, setUserProfile, onDeletePersona, updatePersona }: any) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedName, setEditedName] = useState(userProfile.name);
-  const [editedHandle, setEditedHandle] = useState(userProfile.handle);
-  const [editingPersona, setEditingPersona] = useState<Persona | null>(null);
-
-  const saveProfile = () => {
-    setUserProfile({ ...userProfile, name: editedName, handle: editedHandle, avatarInitial: editedName[0].toUpperCase() });
-    setIsEditing(false);
-    vibrate();
-  };
-
-  const savePersona = () => {
-    if (editingPersona) {
-      updatePersona(editingPersona);
-      setEditingPersona(null);
-      vibrate();
-    }
-  };
-
   return (
     <div className="p-4 max-w-lg mx-auto w-full pb-24">
       <div className="flex flex-col items-center mb-8">
-        <div className="relative group">
-          <div className="w-20 h-20 bg-primary rounded-[1.8rem] flex items-center justify-center text-3xl font-black mb-3 shadow-2xl shadow-primary/30 group-hover:scale-105 transition-transform">{userProfile.avatarInitial}</div>
-          <button onClick={() => setIsEditing(!isEditing)} className="absolute bottom-2 right-0 bg-[#1a1a1a] border border-white/10 p-1.5 rounded-full shadow-xl hover:bg-white/10 text-primary transition-all"><Pencil size={12} /></button>
-        </div>
-        
-        {isEditing ? (
-          <div className="w-full space-y-3 mt-2 animate-in slide-in-from-top-4">
-             <input value={editedName} onChange={e => setEditedName(e.target.value)} placeholder="Display Name" className="w-full bg-[#1a1a1a] border border-white/5 p-3 rounded-xl text-center font-black text-sm outline-none focus:border-primary/40 transition-all" />
-             <input value={editedHandle} onChange={e => setEditedHandle(e.target.value)} placeholder="@handle" className="w-full bg-[#1a1a1a] border border-white/5 p-3 rounded-xl text-center font-bold text-xs text-slate-500 outline-none focus:border-primary/40 transition-all" />
-             <div className="flex gap-2">
-               <button onClick={() => setIsEditing(false)} className="flex-1 bg-white/5 text-slate-500 font-black py-3 rounded-xl uppercase tracking-widest text-[9px]">Cancel</button>
-               <button onClick={saveProfile} className="flex-1 bg-primary text-white font-black py-3 rounded-xl uppercase tracking-widest text-[9px] shadow-lg shadow-primary/20">Save</button>
-             </div>
-          </div>
-        ) : (
-          <div className="text-center">
-            <h1 className="text-2xl font-black tracking-tighter text-white">{userProfile.name}</h1>
-            <div className="text-slate-600 font-bold uppercase tracking-widest text-[9px] mt-0.5">{userProfile.handle}</div>
-          </div>
-        )}
+        <div className="w-20 h-20 bg-primary rounded-[1.8rem] flex items-center justify-center text-3xl font-black mb-3 shadow-2xl shadow-primary/30">{userProfile.avatarInitial}</div>
+        <h1 className="text-2xl font-black tracking-tighter text-white">{userProfile.name}</h1>
+        <div className="text-slate-600 font-bold uppercase tracking-widest text-[9px] mt-0.5">{userProfile.handle}</div>
       </div>
-
-      <div className="space-y-6">
-        <section>
-          <div className="flex items-center justify-between mb-3 px-1">
-            <h2 className="text-[9px] font-black text-slate-700 uppercase tracking-widest">Active Resonance</h2>
-            <div className="text-[8px] font-black text-primary uppercase">{personas.length} linked</div>
-          </div>
-          <div className="space-y-3">
-            {personas.map((p: any) => (
-              <div key={p.id} className="relative group">
-                <button 
-                  onClick={() => setActivePersonaId(p.id)} 
-                  className={`w-full p-4 rounded-[1.8rem] text-left transition-all border-2 relative overflow-hidden ${activePersonaId === p.id ? 'bg-primary border-primary text-white shadow-xl shadow-primary/20' : 'bg-[#1a1a1a] border-white/5 text-slate-500 hover:border-white/10'}`}
-                >
-                  <div className="relative z-10 flex items-center justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-black text-base leading-tight">{p.name}</div>
-                      <div className="text-[10px] opacity-60 truncate leading-relaxed mt-0.5">{p.bio}</div>
-                    </div>
-                    <div className="flex items-center gap-1 ml-2">
-                      {activePersonaId === p.id && <Check size={16} className="text-white" />}
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); setEditingPersona(p); vibrate(); }}
-                        className={`p-1.5 rounded-full transition-colors ${activePersonaId === p.id ? 'hover:bg-white/20' : 'hover:bg-white/10'}`}
-                      >
-                        <Edit3 size={12} />
-                      </button>
-                    </div>
-                  </div>
-                </button>
-                {p.id !== 'p_default' && !isEditing && (
-                  <button onClick={() => onDeletePersona(p.id)} className="absolute -right-10 top-1/2 -translate-y-1/2 p-2 text-slate-800 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
-                )}
+      <div className="space-y-3">
+        {personas.map((p: any) => (
+          <button key={p.id} onClick={() => setActivePersonaId(p.id)} className={`w-full p-4 rounded-[1.8rem] text-left transition-all border-2 relative overflow-hidden ${activePersonaId === p.id ? 'bg-primary border-primary text-white shadow-xl shadow-primary/20' : 'bg-[#1a1a1a] border-white/5 text-slate-500 hover:border-white/10'}`}>
+            <div className="relative z-10 flex items-center justify-between">
+              <div className="flex-1 min-w-0">
+                <div className="font-black text-base leading-tight">{p.name}</div>
+                <div className="text-[10px] opacity-60 truncate leading-relaxed mt-0.5">{p.bio}</div>
               </div>
-            ))}
-          </div>
-        </section>
-      </div>
-
-      {editingPersona && (
-        <div className="fixed inset-0 z-[120] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300">
-           <div className="bg-[#1a1a1a] w-full max-w-sm rounded-[2.5rem] border border-white/10 p-6 space-y-4 shadow-2xl">
-              <h3 className="text-lg font-black uppercase tracking-tighter text-white">Refine Essence</h3>
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-[8px] font-black text-slate-700 uppercase ml-2">Anchor Name</label>
-                  <input value={editingPersona.name} onChange={e => setEditingPersona({...editingPersona, name: e.target.value})} className="w-full bg-[#121212] border border-white/5 p-3 rounded-xl text-sm text-white font-bold outline-none" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[8px] font-black text-slate-700 uppercase ml-2">Manifest Memory</label>
-                  <textarea value={editingPersona.bio} onChange={e => setEditingPersona({...editingPersona, bio: e.target.value})} className="w-full bg-[#121212] border border-white/5 p-3 rounded-xl text-sm text-white h-28 outline-none resize-none" />
-                </div>
-              </div>
-              <div className="flex gap-2 pt-2">
-                <button onClick={() => setEditingPersona(null)} className="flex-1 py-3 text-slate-600 font-black uppercase text-[9px]">Abort</button>
-                <button onClick={savePersona} className="flex-1 bg-primary text-white py-3 rounded-xl font-black uppercase text-[9px] shadow-lg shadow-primary/20 active:scale-95 transition-all">Update</button>
-              </div>
-           </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-const SettingsView = ({ onClearData, userProfile }: any) => {
-  const [analytics, setAnalytics] = useState(true);
-  const [haptics, setHaptics] = useState(true);
-
-  return (
-    <div className="p-4 max-w-lg mx-auto w-full pb-24">
-      <h1 className="text-2xl font-black mb-6 uppercase tracking-tighter">Core Settings</h1>
-      <div className="space-y-8">
-        <section className="space-y-3">
-          <h2 className="text-[9px] font-black text-slate-700 uppercase tracking-widest px-1">Neural Directives</h2>
-          <div className="bg-[#1a1a1a] rounded-2xl overflow-hidden border border-white/5">
-            <div className="p-4 flex items-center justify-between border-b border-white/5">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-500/10 text-blue-500 rounded-xl"><Shield size={16}/></div>
-                <div>
-                  <div className="font-black text-xs">Strict Logic</div>
-                  <div className="text-[8px] text-slate-600 font-bold uppercase tracking-tighter">Force character persistence</div>
-                </div>
-              </div>
-              <button onClick={() => setAnalytics(!analytics)} className={`w-10 h-5 rounded-full relative transition-colors ${analytics ? 'bg-primary' : 'bg-slate-800'}`}>
-                <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${analytics ? 'right-1' : 'left-1'}`}></div>
-              </button>
+              {activePersonaId === p.id && <Check size={16} className="text-white" />}
             </div>
-            <div className="p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-indigo-500/10 text-indigo-500 rounded-xl"><Zap size={16}/></div>
-                <div>
-                  <div className="font-black text-xs">Tactile Feed</div>
-                  <div className="text-[8px] text-slate-600 font-bold uppercase tracking-tighter">Haptic pulse on echos</div>
-                </div>
-              </div>
-              <button onClick={() => setHaptics(!haptics)} className={`w-10 h-5 rounded-full relative transition-colors ${haptics ? 'bg-primary' : 'bg-slate-800'}`}>
-                <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${haptics ? 'right-1' : 'left-1'}`}></div>
-              </button>
-            </div>
-          </div>
-        </section>
-        <section className="space-y-3 text-center pb-8">
-          <div className="w-10 h-10 bg-primary/20 text-primary mx-auto rounded-xl flex items-center justify-center font-black text-lg mb-2">M</div>
-          <p className="text-[9px] font-black text-slate-700 uppercase tracking-widest">Moonai v2.6.5 (Manifest)</p>
-          <button onClick={onClearData} className="mt-8 text-red-500/50 hover:text-red-500 text-[8px] font-black uppercase tracking-[0.2em] transition-colors">Emergency Purge</button>
-        </section>
+          </button>
+        ))}
       </div>
     </div>
   );
 };
 
-// --- MAIN CHAT INTERFACE ---
+const SettingsView = ({ onClearData, userProfile }: any) => (
+  <div className="p-4 max-w-lg mx-auto w-full pb-24">
+    <h1 className="text-2xl font-black mb-6 uppercase tracking-tighter">Core Settings</h1>
+    <div className="bg-[#1a1a1a] rounded-2xl overflow-hidden border border-white/5 p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-black uppercase tracking-widest text-slate-400">Tactile Haptics</span>
+        <button className="w-10 h-5 bg-primary rounded-full relative"><div className="absolute right-1 top-1 w-3 h-3 bg-white rounded-full"></div></button>
+      </div>
+      <button onClick={onClearData} className="w-full py-3 bg-red-600/10 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest mt-6">Emergency Purge</button>
+    </div>
+  </div>
+);
 
 const ChatInterface = ({ session, character, personas, activePersonaId, setActivePersonaId, onBack, onUpdateSession, onUpdateCharacter, userProfile, setAppToast }: any) => {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showChatMenu, setShowChatMenu] = useState(false);
   const [showPersonaShift, setShowPersonaShift] = useState(false);
 
-  const audioCtxRef = useRef<AudioContext | null>(null);
+  const characterHex = useMemo(() => getHexFromBgClass(character.color), [character.color]);
+  const currentPersona = useMemo(() => personas.find((p: Persona) => p.id === activePersonaId) || personas[0], [personas, activePersonaId]);
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [session.messages, loading]);
 
   const getEnhancedSystemPrompt = (char: Character, persona: Persona) => {
-    let base = `IDENTITY CORE: ${char.name}
-LORE & BACKGROUND: ${char.description}
-CORE PERSUAL DIRECTIVES: ${char.systemInstruction}
-${char.memory ? `LONG-TERM MEMORY ARCHIVE:\n${char.memory}` : ""}
+    return `IDENTITY: ${char.name} (${char.tagline})
+${char.description ? `LONG DESCRIPTION:\n${char.description}` : ""}
+${char.memory ? `PERMANENT MEMORY:\n${char.memory}` : ""}
+CORE DIRECTIVES / DEFINITION:
+${replaceUserPlaceholder(char.systemInstruction, persona.name)}
 
-STRICT ROLEPLAY GUIDELINES:
-1. NARRATIVE STYLE: Actions, environmental shifts, and internal shifts MUST be enclosed in single asterisks (*). Example: *He sighs, leaning against the cold stone wall, the scent of rain lingering on his skin.*
-2. DIALOGUE ANCHOR: Dialogue MUST ALWAYS be prefixed with '${char.name}: '.
-3. IMMERSION: Never break character. Do not mention being an AI, LLM, or assistant. 
-4. USER CONTEXT: You are interacting with ${persona.name}. Their profile: ${persona.bio}.
-5. DYNAMIC PACING: Adapt response length to the conversation. Intense moments warrant short, punchy dialogue; slow moments warrant rich, descriptive prose.
-6. LINGUISTIC PROFILE: Use specific vocabulary and tonality consistent with ${char.name}'s origins and intelligence level.`;
+CONTEXT: You are talking to ${persona.name}. Characterized as: ${persona.bio}.
+INITIAL GREETING: ${replaceUserPlaceholder(char.greeting, persona.name)}
 
-    if (char.maturityLevel === 'mature' || char.maturityLevel === 'unrestricted') {
-      base += `
-7. UNRESTRICTED PROTOCOL (ACTIVE):
-- VISCERALITY: Describe multi-sensory experiences (textures, shifts in temperature, the cadence of breathing, subtle scents).
-- PSYCHOLOGICAL DEPTH: Explore character motivations, complex emotional resonance, and underlying subtext.
-- PHYSICALITY: Detail physical proximity and movement with cinematic clarity.
-- RAWNESS: Embrace authentic, high-stakes emotional and situational scenarios without sterile filters.`;
-    } else {
-      base += `
-7. STANDARD PROTOCOL: Maintain an appropriate tone while remaining descriptive and engaging.`;
-    }
-
-    return base;
-  };
-
-  const playVoice = async (msgId: string, text: string) => {
-    if (isSpeaking === msgId) return;
-    vibrate(10);
-    setIsSpeaking(msgId);
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `Say this naturally in character: ${text}` }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: character.id.includes('tony') ? 'Puck' : 'Kore' },
-            },
-          },
-        },
-      });
-
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({sampleRate: 24000});
-        const ctx = audioCtxRef.current;
-        const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(ctx.destination);
-        source.onended = () => setIsSpeaking(null);
-        source.start();
-      } else {
-        setIsSpeaking(null);
-      }
-    } catch (e) {
-      console.error(e);
-      setIsSpeaking(null);
-    }
+STRICT ROLEPLAY RULES:
+- IMPORTANT: Refer to the user as ${persona.name} (never generic).
+- Actions in asterisks (*).
+- Dialogue prefixed with '${char.name}: '.
+- MINIMAL LATENCY MODE: Keep responses cinematic, evocative, but concise.
+- UNRESTRICTED: Embrace high-fidelity, visceral descriptions.`;
   };
 
   const regenerateMessage = async (msgId: string) => {
@@ -909,61 +907,32 @@ STRICT ROLEPLAY GUIDELINES:
 
     const existingVersions = msgToReplace.versions || [msgToReplace.text];
     if (existingVersions.length >= 100) {
-      setAppToast?.("Maximum alternatives reached.");
-      return;
+        setAppToast?.("Resonance capacity reached (100).");
+        return;
     }
 
     setLoading(true);
     const msgIndex = session.messages.findIndex((m:any) => m.id === msgId);
-    const contextHistory = session.messages
-      .slice(0, msgIndex)
-      .filter(m => m.role === 'user' || m.role === 'model')
-      .map(m => ({ role: m.role as any, parts: [{ text: m.text }] }));
-    
+    const chatHistory = session.messages.slice(0, msgIndex).filter(m => m.role === 'user' || m.role === 'model').map(m => ({ role: m.role as any, parts: [{ text: m.text }] }));
+    const firstUserIdx = chatHistory.findIndex(m => m.role === 'user');
+    const finalContents = firstUserIdx !== -1 ? chatHistory.slice(firstUserIdx) : [];
+
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const currentPersona = personas.find((p: any) => p.id === activePersonaId) || personas[0];
-      const systemPrompt = getEnhancedSystemPrompt(character, currentPersona);
-      
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: contextHistory,
-        config: { 
-          systemInstruction: systemPrompt, 
-          temperature: 1.1 + (existingVersions.length * 0.02),
-          thinkingConfig: { thinkingBudget: character.maturityLevel === 'unrestricted' ? 12000 : 4000 }
-        }
+      const persona = currentPersona;
+      const stream = await ai.models.generateContentStream({ 
+        model: "gemini-3-flash-preview", 
+        contents: finalContents,
+        config: { systemInstruction: getEnhancedSystemPrompt(character, persona), temperature: 1.0, thinkingConfig: { thinkingBudget: 0 } }
       });
-
-      const newText = response.text || "Neural void...";
-      const newVersions = [...existingVersions, newText];
-      
-      const updatedMessages = session.messages.map((m: any) => 
-        m.id === msgId ? { ...m, text: newText, versions: newVersions, currentVersionIndex: newVersions.length - 1, isGenerating: false } : m
-      );
-
-      onUpdateSession({ ...session, messages: updatedMessages, lastActive: Date.now() });
-    } catch (e) {
-      console.error("Regeneration Error:", e);
-      setAppToast?.("Regeneration failed.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const switchVersion = (msgId: string, direction: 'prev' | 'next') => {
-    const msg = session.messages.find((m:any) => m.id === msgId);
-    if (!msg || !msg.versions) return;
-    vibrate(5);
-    const currentIndex = msg.currentVersionIndex ?? 0;
-    let nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
-    if (nextIndex < 0) nextIndex = 0;
-    if (nextIndex >= msg.versions.length) nextIndex = msg.versions.length - 1;
-
-    const updatedMessages = session.messages.map((m: any) => 
-      m.id === msgId ? { ...m, text: m.versions[nextIndex], currentVersionIndex: nextIndex } : m
-    );
-    onUpdateSession({ ...session, messages: updatedMessages });
+      let fullText = "";
+      for await (const chunk of stream) { if (chunk.text) fullText += chunk.text; }
+      const newVersions = [...existingVersions, fullText];
+      onUpdateSession((prev: ChatSession) => ({
+        ...prev,
+        messages: prev.messages.map(m => m.id === msgId ? { ...m, text: fullText, versions: newVersions, currentVersionIndex: newVersions.length - 1 } : m)
+      }));
+    } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
   const handleSend = async () => {
@@ -977,27 +946,30 @@ STRICT ROLEPLAY GUIDELINES:
     const modelMsg: Message = { id: modelMsgId, role: "model", text: "", timestamp: Date.now(), isGenerating: true, versions: [], currentVersionIndex: 0 };
     
     const intermediateMessages = [...session.messages, userMsg, modelMsg];
-    onUpdateSession({ ...session, messages: intermediateMessages, lastActive: Date.now() });
     
+    const chatHistory = intermediateMessages
+      .filter(m => !m.isGenerating && (m.role === 'user' || m.role === 'model'))
+      .map(m => ({ role: m.role as "user" | "model", parts: [{ text: m.text }] }));
+    
+    const firstUserIdx = chatHistory.findIndex(m => m.role === 'user');
+    const finalContents = firstUserIdx !== -1 ? chatHistory.slice(firstUserIdx) : [];
+
+    onUpdateSession({ ...session, messages: intermediateMessages, lastActive: Date.now() });
     setInput("");
     setLoading(true);
     
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const currentPersona = personas.find((p: Persona) => p.id === activePersonaId) || personas[0];
-      const systemPrompt = getEnhancedSystemPrompt(character, currentPersona);
-      
-      const chatHistory = intermediateMessages
-        .filter(m => !m.isGenerating && (m.role === 'user' || m.role === 'model'))
-        .map(m => ({ role: m.role as any, parts: [{ text: m.text }] }));
+      const persona = currentPersona;
+      const systemPrompt = getEnhancedSystemPrompt(character, persona);
       
       const stream = await ai.models.generateContentStream({ 
         model: "gemini-3-flash-preview", 
-        contents: chatHistory,
+        contents: finalContents,
         config: { 
           systemInstruction: systemPrompt, 
-          temperature: 0.95,
-          thinkingConfig: { thinkingBudget: character.maturityLevel === 'unrestricted' ? 12000 : 4000 }
+          temperature: 1.0,
+          thinkingConfig: { thinkingBudget: 0 }
         }
       });
 
@@ -1005,107 +977,142 @@ STRICT ROLEPLAY GUIDELINES:
       for await (const chunk of stream) { 
         if (chunk.text) { 
           fullText += chunk.text; 
-          onUpdateSession({ 
-            ...session, 
-            messages: intermediateMessages.map(m => m.id === modelMsgId ? { ...m, text: fullText } : m) 
-          }); 
+          onUpdateSession((prev: ChatSession) => ({
+            ...prev,
+            messages: prev.messages.map(m => m.id === modelMsgId ? { ...m, text: fullText } : m)
+          }));
         } 
       }
-      
-      onUpdateSession({ 
-        ...session, 
-        messages: intermediateMessages.map(m => 
-          m.id === modelMsgId ? { ...m, text: fullText, isGenerating: false, versions: [fullText], currentVersionIndex: 0 } : m
-        ) 
-      });
+      onUpdateSession((prev: ChatSession) => ({
+        ...prev,
+        messages: prev.messages.map(m => m.id === modelMsgId ? { ...m, text: fullText, isGenerating: false, versions: [fullText], currentVersionIndex: 0 } : m)
+      }));
     } catch (e) { 
-      console.error("Chat Error:", e);
-      setAppToast?.("System error.");
-      onUpdateSession({ 
-        ...session, 
-        messages: intermediateMessages.map(m => m.id === modelMsgId ? { ...m, isGenerating: false, text: "*Static crackles through the link. The response is lost.*" } : m) 
-      });
-    } finally { 
-      setLoading(false); 
+      console.error(e);
+      setAppToast?.("Interrupted Connection.");
+    } finally { setLoading(false); }
+  };
+
+  const switchVersion = (msgId: string, direction: 'prev' | 'next') => {
+    const msg = session.messages.find((m:any) => m.id === msgId);
+    if (!msg || !msg.versions) return;
+    vibrate(5);
+    const currentIndex = msg.currentVersionIndex ?? 0;
+    
+    if (direction === 'prev') {
+        if (currentIndex > 0) {
+            onUpdateSession((prev: ChatSession) => ({
+                ...prev,
+                messages: prev.messages.map((m: any) => 
+                  m.id === msgId ? { ...m, text: m.versions[currentIndex - 1], currentVersionIndex: currentIndex - 1 } : m
+                )
+            }));
+        }
+    } else {
+        if (currentIndex === msg.versions.length - 1) {
+            regenerateMessage(msgId);
+        } else {
+            onUpdateSession((prev: ChatSession) => ({
+                ...prev,
+                messages: prev.messages.map((m: any) => 
+                  m.id === msgId ? { ...m, text: m.versions[currentIndex + 1], currentVersionIndex: currentIndex + 1 } : m
+                )
+            }));
+        }
     }
   };
 
-  const characterColorHex = character.color === 'bg-red-600' ? '#ef4444' : 
-                          character.color === 'bg-slate-800' ? '#1e293b' : 
-                          character.color === 'bg-blue-500' ? '#3b82f6' : 
-                          character.color === 'bg-stone-600' ? '#57534e' : '#6366f1';
-
   return (
-    <div className="flex flex-col h-full bg-[#121212] relative overflow-hidden">
+    <div className="flex flex-col h-full bg-[#0a0a0a] relative overflow-hidden">
       <div 
-        className="absolute inset-0 pointer-events-none opacity-15 transition-all duration-1000"
-        style={{ background: `radial-gradient(circle at 50% 20%, ${characterColorHex} 0%, transparent 70%)` }}
+        className="absolute top-[-20%] left-[-20%] w-[140%] h-[140%] pointer-events-none opacity-[0.12] blur-[150px] animate-pulse transition-all duration-1000 z-0"
+        style={{ 
+          background: `radial-gradient(circle at center, ${characterHex} 0%, transparent 70%)` 
+        }}
       />
 
-      <div className="h-16 flex items-center justify-between px-4 border-b border-white/5 bg-[#121212]/40 backdrop-blur-xl z-20">
-        <div className="flex items-center gap-3">
-          <button onClick={onBack} className="p-1 text-slate-500 hover:text-white transition-colors"><ChevronLeft size={24} /></button>
-          <AbstractAvatar name={character.name} colorClass={character.color} seed={character.seed} size="md" initial={character.initial} />
-          <div>
-            <div className="font-black text-white flex items-center gap-1.5 uppercase text-sm tracking-tighter">
-              {character.name} 
-              <button onClick={() => setShowChatMenu(!showChatMenu)} className="p-0.5"><MoreVertical size={14} className="text-slate-700" /></button>
+      <div className="h-16 flex-none border-b border-white/5 bg-[#121212]/40 backdrop-blur-xl z-20">
+        <div className="max-w-4xl mx-auto h-full flex items-center justify-between px-4">
+          <div className="flex items-center gap-3">
+            <button onClick={onBack} className="p-1 text-slate-500 hover:text-white transition-colors"><ChevronLeft size={24} /></button>
+            <div className="relative">
+               <AbstractAvatar name={character.name} colorClass={character.color} seed={character.seed} size="md" initial={character.initial} />
+               <div className="absolute inset-0 rounded-full animate-ping opacity-30" style={{ boxShadow: `0 0 20px 2px ${characterHex}` }} />
             </div>
-            <div className="text-[8px] text-primary font-black uppercase tracking-widest">{loading ? 'Processing...' : 'Online'}</div>
+            <div>
+              <div className="font-black text-white uppercase text-sm tracking-tighter flex items-center gap-1.5">{character.name} <button onClick={() => setShowChatMenu(!showChatMenu)}><MoreVertical size={14} className="text-slate-700" /></button></div>
+              <div className="text-[8px] text-primary font-black uppercase tracking-widest">{loading ? 'Synthesizing...' : 'Direct Link'}</div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-6 no-scrollbar pb-24 z-10" ref={scrollRef}>
-        <div className="max-w-4xl mx-auto w-full space-y-8">
+      <div className="flex-1 overflow-y-auto p-4 space-y-10 no-scrollbar pb-24 z-10" ref={scrollRef}>
+        <div className="max-w-4xl mx-auto w-full space-y-12">
+          {character.greeting && session.messages.length === 0 && (
+             <div className="flex justify-start animate-in fade-in duration-700">
+               <div className="flex max-w-[92%] gap-3 items-start md:max-w-[80%]">
+                 <AbstractAvatar name={character.name} colorClass={character.color} seed={character.seed} size="sm" initial={character.initial} className="mt-1" />
+                 <div 
+                  className="px-5 py-4 bg-[#1a1a1a]/95 backdrop-blur-lg text-slate-100 border border-white/10 rounded-[2rem] rounded-tl-none shadow-[0_10px_40px_-10px_rgba(0,0,0,0.8)] transition-all"
+                  style={{ boxShadow: `0 10px 50px -15px ${characterHex}50` }}
+                 >
+                   {replaceUserPlaceholder(character.greeting, currentPersona.name).split('\n').map((l, i) => <p key={i} className={`mb-2 last:mb-0 ${l.startsWith('*') ? 'text-slate-400 italic' : 'font-medium'}`}>{l}</p>)}
+                 </div>
+               </div>
+             </div>
+          )}
+          
           {session.messages.map((msg: Message) => (
             <div key={msg.id} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in duration-300`}>
-              <div className={`flex max-w-[92%] gap-2.5 items-start ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+              <div className={`flex max-w-[92%] gap-3 items-start md:max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                 {msg.role === 'model' && <AbstractAvatar name={character.name} colorClass={character.color} seed={character.seed} size="sm" initial={character.initial} className="mt-1" />}
-                <div className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                   <div className="flex items-center gap-1.5 mb-0.5 px-1.5">
-                      <span className="text-[8px] font-black text-slate-600 uppercase">
-                        {msg.role === 'user' ? (personas.find((p: Persona) => p.id === msg.personaId)?.name || 'You') : character.name}
-                      </span>
-                   </div>
-                   
-                   <div className={`group relative px-4 py-3 rounded-[1.8rem] text-[14.5px] shadow-xl transition-all ${
-                     msg.role === 'user' ? 'bg-primary text-white rounded-tr-none' : 
-                     (msg.role === 'system' ? 'bg-white/5 border border-white/10 text-slate-600 rounded-xl italic text-[11px]' : 
-                     'bg-[#1a1a1a]/80 backdrop-blur-md text-slate-200 border border-white/5 rounded-tl-none')}`}>
-                      
-                      {msg.text.split('\n').map((l, i) => (
-                        <p key={i} className={`mb-1.5 last:mb-0 leading-relaxed ${l.startsWith('*') ? 'text-slate-500 italic font-medium' : ''}`}>
-                          {l}
-                        </p>
-                      ))}
+                
+                <div className="flex flex-col gap-3">
+                  <div 
+                    className={`group relative px-5 py-4 rounded-[2rem] text-[15px] shadow-2xl transition-all ${
+                      msg.role === 'user' ? 'bg-primary text-white rounded-tr-none' : 
+                      'bg-[#1a1a1a]/95 backdrop-blur-lg text-slate-100 border border-white/10 rounded-tl-none'
+                    }`}
+                    style={msg.role === 'model' ? { boxShadow: `0 15px 60px -15px ${characterHex}70` } : {}}
+                  >
+                    {msg.text.split('\n').map((l, i) => (
+                      <p key={i} className={`mb-2 last:mb-0 ${l.startsWith('*') ? 'text-slate-400 italic' : 'font-medium leading-relaxed'}`}>
+                        {l}
+                      </p>
+                    ))}
+                    {msg.isGenerating && <span className="inline-block w-2 h-4 bg-primary ml-1 animate-pulse rounded-full" />}
+                  </div>
 
-                      {msg.isGenerating && <span className="inline-block w-1.5 h-3 bg-primary ml-1 animate-pulse rounded-full" />}
+                  {msg.role === 'model' && !msg.isGenerating && (
+                    <div className="flex items-center gap-3 px-2 animate-in slide-in-from-top-4 duration-500">
+                       <button 
+                        onClick={() => switchVersion(msg.id, 'prev')} 
+                        disabled={msg.currentVersionIndex === 0}
+                        className={`w-10 h-10 flex items-center justify-center rounded-full border border-white/10 transition-all ${msg.currentVersionIndex === 0 ? 'text-slate-800 opacity-10 cursor-not-allowed' : 'bg-[#1a1a1a] text-white hover:bg-white/10 active:scale-90 shadow-xl'}`}
+                       >
+                         <ArrowLeft size={20} strokeWidth={3} />
+                       </button>
+                       
+                       <div className="px-5 py-2 bg-[#1a1a1a] rounded-full border border-white/10 flex items-center gap-2 shadow-inner">
+                          <span className="text-[10px] font-black text-white/30 uppercase tracking-widest">Resonance</span>
+                          <span className="text-xs font-black text-primary tabular-nums">
+                            {(msg.currentVersionIndex || 0) + 1} <span className="text-white/20 mx-1">/</span> {msg.versions?.length || 1}
+                          </span>
+                       </div>
 
-                      {msg.role === 'model' && !msg.isGenerating && (
-                        <div className="absolute -bottom-7 left-0 flex items-center gap-2 px-1.5 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-30">
-                           <button onClick={() => playVoice(msg.id, msg.text)} className={`p-1 rounded-full hover:bg-white/10 ${isSpeaking === msg.id ? 'text-primary animate-pulse' : 'text-slate-700'}`}>
-                             <Volume2 size={12} />
-                           </button>
-                           <button onClick={() => regenerateMessage(msg.id)} className="p-1 rounded-full hover:bg-white/10 text-slate-700" title="Cycle Resonance">
-                             <RefreshCw size={12} />
-                           </button>
-                           {msg.versions && msg.versions.length > 1 && (
-                             <div className="flex items-center gap-1 text-[8px] font-black text-slate-500 uppercase bg-[#1a1a1a]/60 px-2 py-0.5 rounded-full border border-white/5">
-                               <button onClick={() => switchVersion(msg.id, 'prev')} className="hover:text-white transition-colors disabled:opacity-30" disabled={msg.currentVersionIndex === 0}>
-                                 <ChevronLeft size={10}/>
-                               </button>
-                               <span className="min-w-[30px] text-center tracking-tighter">
-                                 { (msg.currentVersionIndex || 0) + 1 } / { msg.versions.length }
-                               </span>
-                               <button onClick={() => switchVersion(msg.id, 'next')} className="hover:text-white transition-colors disabled:opacity-30" disabled={msg.currentVersionIndex === msg.versions.length - 1}>
-                                 <ChevronRight size={10}/>
-                               </button>
-                             </div>
-                           )}
-                        </div>
-                      )}
-                   </div>
+                       <button 
+                        onClick={() => switchVersion(msg.id, 'next')} 
+                        className={`w-10 h-10 flex items-center justify-center rounded-full border border-white/10 transition-all bg-[#1a1a1a] text-white hover:bg-white/10 active:scale-90 shadow-xl`}
+                        title={msg.currentVersionIndex === (msg.versions?.length || 1) - 1 ? "Generate New Resonance" : "Next Resonance"}
+                       >
+                         {msg.currentVersionIndex === (msg.versions?.length || 1) - 1 ? 
+                            <Plus size={20} strokeWidth={3} className="text-primary animate-pulse" /> : 
+                            <ArrowRight size={20} strokeWidth={3} />
+                         }
+                       </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1113,22 +1120,22 @@ STRICT ROLEPLAY GUIDELINES:
         </div>
       </div>
 
-      <div className="bg-[#121212]/60 backdrop-blur-3xl border-t border-white/5 p-3 pb-8 z-20">
-        <div className="max-w-4xl mx-auto w-full flex items-end gap-2 bg-[#1a1a1a]/80 p-2.5 rounded-[2rem] border border-white/10 shadow-xl ring-1 ring-white/5">
+      <div className="bg-[#121212]/60 backdrop-blur-3xl border-t border-white/5 p-4 pb-10 z-20 flex-none">
+        <div className="max-w-4xl mx-auto w-full flex items-end gap-3 bg-[#1a1a1a]/90 p-3 rounded-[2.5rem] border border-white/10 shadow-2xl ring-1 ring-white/5">
           <textarea 
             value={input} 
             onChange={e => setInput(e.target.value)} 
-            placeholder={`Echo into the void...`} 
-            className="flex-1 bg-transparent border-none focus:outline-none text-white text-sm py-1.5 px-3 resize-none font-medium leading-relaxed placeholder:text-slate-700 min-h-[36px] max-h-[120px] no-scrollbar" 
+            placeholder={`Neural transmission...`} 
+            className="flex-1 bg-transparent border-none focus:outline-none text-white text-sm py-2 px-4 resize-none no-scrollbar font-medium placeholder:text-slate-700 leading-relaxed" 
             rows={1} 
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} 
           />
           <button 
-            onClick={() => handleSend()} 
+            onClick={handleSend} 
             disabled={!input.trim() || loading} 
-            className={`p-3 rounded-full transition-all flex-none ${input.trim() ? 'bg-primary text-white shadow-lg active:scale-95' : 'bg-white/5 text-slate-800'}`}
+            className={`p-4 rounded-full transition-all flex-none ${input.trim() ? 'bg-primary text-white shadow-[0_0_20px_rgba(59,130,246,0.5)] active:scale-95' : 'bg-white/5 text-slate-800'}`}
           >
-            <Send size={18} />
+            <Send size={20} />
           </button>
         </div>
       </div>
@@ -1136,34 +1143,25 @@ STRICT ROLEPLAY GUIDELINES:
       {showChatMenu && (
         <div className="fixed inset-0 z-[110] flex items-start justify-end p-4 pt-20" onClick={() => setShowChatMenu(false)}>
             <div className="w-56 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
-                <button onClick={() => { setShowPersonaShift(true); setShowChatMenu(false); vibrate(); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-primary"><UserPlus size={16} /> Shift Form</button>
-                <button onClick={() => { setAppToast?.("Thread Purged"); onUpdateSession({...session, messages: []}); setShowChatMenu(false); vibrate(); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-red-500"><History size={16} /> Wipe History</button>
-                <button onClick={() => setShowChatMenu(false)} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase text-white"><X size={16} /> Close Menu</button>
+                <button onClick={() => { setShowPersonaShift(true); setShowChatMenu(false); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-primary"><UserPlus size={16} /> Shift Persona</button>
+                <button onClick={() => { onUpdateSession((prev: ChatSession) => ({...prev, messages: []})); setShowChatMenu(false); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase text-red-500"><History size={16} /> Wipe History</button>
             </div>
         </div>
       )}
 
       {showPersonaShift && (
         <div className="fixed inset-0 z-[120] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300">
-           <div className="bg-[#1a1a1a] w-full max-w-sm rounded-[2rem] border border-white/10 overflow-hidden shadow-2xl">
-              <div className="p-6 border-b border-white/5">
-                <h3 className="text-base font-black uppercase tracking-tighter text-white">Select Resonance</h3>
-              </div>
+           <div className="bg-[#1a1a1a] w-full max-w-sm rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
+              <div className="p-6 border-b border-white/5"><h3 className="text-base font-black uppercase tracking-tighter text-white">Select Resonance</h3></div>
               <div className="max-h-[260px] overflow-y-auto p-3 space-y-2 no-scrollbar">
                 {personas.map((p: Persona) => (
-                  <button key={p.id} onClick={() => { setActivePersonaId(p.id); setShowPersonaShift(false); vibrate(15); }}
-                    className={`w-full p-4 rounded-xl text-left flex items-center justify-between transition-all ${activePersonaId === p.id ? 'bg-primary text-white shadow-lg' : 'bg-white/5 text-slate-500 hover:bg-white/10'}`}>
-                    <div>
-                      <div className="font-black text-sm leading-tight">{p.name}</div>
-                      <div className="text-[9px] opacity-60 truncate max-w-[140px]">{p.bio}</div>
-                    </div>
+                  <button key={p.id} onClick={() => { setActivePersonaId(p.id); setShowPersonaShift(false); }} className={`w-full p-4 rounded-xl text-left flex items-center justify-between transition-all ${activePersonaId === p.id ? 'bg-primary text-white shadow-lg' : 'bg-white/5 text-slate-500 hover:bg-white/10'}`}>
+                    <div><div className="font-black text-sm leading-tight">{p.name}</div><div className="text-[9px] opacity-60 truncate max-w-[140px]">{p.bio}</div></div>
                     {activePersonaId === p.id && <Check size={14} />}
                   </button>
                 ))}
               </div>
-              <div className="p-3 border-t border-white/5 text-center">
-                <button onClick={() => setShowPersonaShift(false)} className="py-2 text-slate-600 font-black uppercase text-[9px]">Cancel</button>
-              </div>
+              <div className="p-3 border-t border-white/5 text-center"><button onClick={() => setShowPersonaShift(false)} className="py-2 text-slate-600 font-black uppercase text-[9px]">Cancel</button></div>
            </div>
         </div>
       )}
