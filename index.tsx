@@ -163,6 +163,36 @@ const handleShareApp = async (setToast: (m: string) => void) => {
   }
 };
 
+const handleDownloadChat = (character: Character, session: ChatSession, persona: Persona) => {
+  let content = `Moonai Export: ${character.name}\n`;
+  content += `Persona: ${persona.name}\n`;
+  content += `Timestamp: ${new Date().toLocaleString()}\n`;
+  content += `------------------------------------------\n\n`;
+
+  if (character.greeting) {
+    content += `${character.name}: ${replaceUserPlaceholder(character.greeting, persona.name)}\n\n`;
+  }
+
+  session.messages.forEach(msg => {
+    if (msg.role === 'system') {
+      content += `[SYSTEM]: ${msg.text}\n\n`;
+    } else {
+      const name = msg.role === 'user' ? persona.name : character.name;
+      content += `${name}: ${msg.text}\n\n`;
+    }
+  });
+
+  const blob = new Blob([content], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Moonai_Chat_${character.name.replace(/\s+/g, '_')}_${Date.now()}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
 // --- Components ---
 
 const AbstractAvatar = ({ 
@@ -1237,6 +1267,7 @@ STRICT ROLEPLAY RULES:
         <div className="fixed inset-0 z-[110] flex items-start justify-end p-4 pt-20" onClick={() => setShowChatMenu(false)}>
             <div className="w-56 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
                 <button onClick={() => { setShowPersonaShift(true); setShowChatMenu(false); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-primary"><UserPlus size={16} /> Shift Persona</button>
+                <button onClick={() => { handleDownloadChat(character, session, currentPersona); setShowChatMenu(false); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-amber-500"><Download size={16} /> Export Dialogue</button>
                 <button onClick={() => { handleShareApp(setAppToast); setShowChatMenu(false); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-slate-400"><Share2 size={16} /> Share App</button>
                 <button onClick={() => { onUpdateSession((prev: ChatSession) => ({...prev, messages: []})); setShowChatMenu(false); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase text-red-500"><History size={16} /> Wipe History</button>
             </div>
