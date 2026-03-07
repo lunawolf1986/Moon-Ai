@@ -318,16 +318,43 @@ const App = () => {
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
   useEffect(() => {
     const handleOnline = () => { setIsOnline(true); setAppToast("Neural Link Restored"); vibrate(50); };
     const handleOffline = () => { setIsOnline(false); setAppToast("Neural Link Severed (Offline)"); vibrate(100); };
+    const handleBeforeInstallPrompt = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     };
   }, []);
+
+  const handleInstall = async () => {
+    vibrate(20);
+    if (!deferredPrompt) {
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+      if (isIOS) {
+        setAppToast("Tap Share > 'Add to Home Screen'");
+      } else {
+        setAppToast("Use Browser Menu > 'Install App'");
+      }
+      return;
+    }
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setAppToast("Neural Link Anchored to Device");
+    }
+    setDeferredPrompt(null);
+  };
   const [activePersonaId, setActivePersonaId] = useState<string>("p_default");
   const [createViewMode, setCreateViewMode] = useState<"character" | "persona">("character");
   const [editingCharacterId, setEditingCharacterId] = useState<string | null>(null);
@@ -450,7 +477,7 @@ const App = () => {
       case "create": return <CreateView initialMode={createViewMode} userProfile={userProfile} onAddCharacters={(newChars: Character[]) => setCharacters([...newChars, ...characters])} onCreateCharacter={(c: any) => { setCharacters([c, ...characters]); setAppToast("Identity Manifested"); setActiveTab("library"); }} onBack={() => setActiveTab('for_you')} />;
       case "library": return <LibraryView characters={characters} personas={personas} userProfile={userProfile} onEditCharacter={(c: Character) => setEditingCharacterId(c.id)} />;
       case "profile": return <ProfileView personas={personas} activePersonaId={activePersonaId} setActivePersonaId={(id: string) => { setActivePersonaId(id); const p = personas.find(pers => pers.id === id); if (p) setAppToast(`Manifested: ${p.name}`); }} chats={chats} onEditPersona={setEditingPersonaId} userProfile={userProfile} setUserProfile={setUserProfile} onDeletePersona={(id: string) => setPersonas(personas.filter(p => p.id !== id))} />;
-      case "settings": return <SettingsView onClearData={clearAllData} userProfile={userProfile} setAppToast={setAppToast} />;
+      case "settings": return <SettingsView onClearData={clearAllData} userProfile={userProfile} setAppToast={setAppToast} onInstall={handleInstall} isInstallable={!!deferredPrompt} />;
       default: return <ForYouView characters={characters} onStartChat={startChat} onCustomize={setEditingCharacterId} />;
     }
   };
@@ -839,10 +866,20 @@ const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfil
   );
 };
 
-const SettingsView = ({ onClearData, userProfile, setAppToast }: any) => (
+const SettingsView = ({ onClearData, userProfile, setAppToast, onInstall, isInstallable }: any) => (
   <div className="p-4 max-w-lg mx-auto w-full pb-32">
     <h1 className="text-2xl font-black mb-6 uppercase tracking-tighter text-white">Core Settings</h1>
     <div className="bg-[#1a1a1a] rounded-[2.5rem] overflow-hidden border border-white/5 p-6 space-y-6 shadow-2xl">
+      <section className="space-y-4">
+        <h3 className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Deployment</h3>
+        <button onClick={onInstall} className="w-full flex items-center justify-between p-4 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 rounded-2xl border border-emerald-500/20 transition-all active:scale-95">
+          <div className="flex items-center gap-3"><Download size={18} /><span className="text-xs font-black uppercase tracking-widest">{isInstallable ? "Install Moonai" : "Download App"}</span></div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[8px] font-bold opacity-60 uppercase">PC / Android / iOS</span>
+            <ChevronRight size={16} />
+          </div>
+        </button>
+      </section>
       <section className="space-y-4">
         <h3 className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Interface</h3>
         <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5"><span className="text-xs font-black uppercase tracking-widest text-slate-300">Tactile Haptics</span><button className="w-10 h-5 bg-primary rounded-full relative"><div className="absolute right-1 top-1 w-3 h-3 bg-white rounded-full"></div></button></div>
