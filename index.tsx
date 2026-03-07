@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { createRoot } from "react-dom/client";
-import { GoogleGenAI, Modality, Type } from "@google/genai";
+import { GoogleGenAI, Modality, Type, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import {
   MessageSquare,
   User,
@@ -27,7 +27,6 @@ import {
   Pencil,
   FileText,
   UserPlus,
-  Volume2,
   ChevronLeftCircle,
   ChevronRightCircle,
   Dices,
@@ -45,7 +44,9 @@ import {
   EyeOff,
   AlertCircle,
   BookOpen,
-  Share2
+  Share2,
+  Heart,
+  Atom
 } from "lucide-react";
 
 // Import character data and type
@@ -64,6 +65,8 @@ interface Persona {
   name: string;
   bio: string;
   traits: string[];
+  mood?: string;
+  relationship?: string;
   isPrivate: boolean;
   avatarColor: string;
   greeting?: string;
@@ -132,7 +135,6 @@ const replaceUserPlaceholder = (text: string | undefined, personaName: string) =
 
 // Formats text with asterisks into styled spans, hiding the asterisks
 const renderFormattedText = (text: string) => {
-  // Regex to match **bold** or *italic/action*
   const parts = text.split(/(\*\*.*?\*\*|\*.*?\*)/g);
   return parts.map((part, i) => {
     if (part.startsWith('**') && part.endsWith('**')) {
@@ -150,7 +152,6 @@ const handleShareApp = async (setToast: (m: string) => void) => {
     text: 'Check out Moonai for unrestricted character roleplay and deep AI conversations!',
     url: window.location.origin
   };
-
   try {
     if (navigator.share) {
       await navigator.share(shareData);
@@ -168,11 +169,9 @@ const handleDownloadChat = (character: Character, session: ChatSession, persona:
   content += `Persona: ${persona.name}\n`;
   content += `Timestamp: ${new Date().toLocaleString()}\n`;
   content += `------------------------------------------\n\n`;
-
   if (character.greeting) {
     content += `${character.name}: ${replaceUserPlaceholder(character.greeting, persona.name)}\n\n`;
   }
-
   session.messages.forEach(msg => {
     if (msg.role === 'system') {
       content += `[SYSTEM]: ${msg.text}\n\n`;
@@ -181,7 +180,6 @@ const handleDownloadChat = (character: Character, session: ChatSession, persona:
       content += `${name}: ${msg.text}\n\n`;
     }
   });
-
   const blob = new Blob([content], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -250,6 +248,8 @@ const DEFAULT_PERSONAS: Persona[] = [
     name: "Standard Me",
     bio: "Just myself, living in the real world.",
     traits: ["Human", "Authentic"],
+    mood: "Neutral and observant.",
+    relationship: "A curious newcomer meeting the character for the first time.",
     isPrivate: true,
     avatarColor: "bg-blue-500",
     greeting: "Hello! It's just me today."
@@ -319,6 +319,7 @@ const App = () => {
   const [activePersonaId, setActivePersonaId] = useState<string>("p_default");
   const [createViewMode, setCreateViewMode] = useState<"character" | "persona">("character");
   const [editingCharacterId, setEditingCharacterId] = useState<string | null>(null);
+  const [editingPersonaId, setEditingPersonaId] = useState<string | null>(null);
 
   useEffect(() => { localStorage.setItem('pf_characters', JSON.stringify(characters)); }, [characters]);
   useEffect(() => { localStorage.setItem('pf_personas', JSON.stringify(personas)); }, [personas]);
@@ -350,14 +351,31 @@ const App = () => {
     }
   };
 
-  const openPersonaCreator = () => {
-    vibrate();
-    setCreateViewMode("persona");
-    setActiveTab("create");
-    setActiveChatId(null);
+  const handleSavePersona = (data: Persona) => {
+    if (editingPersonaId === 'new') {
+      const newPersona = { ...data, id: generateId("p_"), avatarColor: "bg-sky-600" };
+      setPersonas([newPersona, ...personas]);
+      setAppToast("Persona Formed");
+    } else {
+      setPersonas(personas.map(p => p.id === data.id ? data : p));
+      setAppToast("Persona Updated");
+    }
+    setEditingPersonaId(null);
   };
 
   const renderTabContent = () => {
+    if (editingPersonaId) {
+      const isNew = editingPersonaId === 'new';
+      const personaData = isNew ? { id: 'new', name: '', bio: '', traits: [], isPrivate: true } : personas.find(p => p.id === editingPersonaId);
+      if (personaData) {
+        return <PersonaEditor 
+          initialData={personaData} 
+          onSave={handleSavePersona}
+          onCancel={() => setEditingPersonaId(null)}
+          mode={isNew ? 'create' : 'edit'}
+        />;
+      }
+    }
     if (activeChatId) {
       const session = chats.find(c => c.id === activeChatId);
       const character = characters.find(c => c.id === session?.characterId);
@@ -388,13 +406,12 @@ const App = () => {
             }}
             onUpdateCharacter={(updates: Partial<Character>) => { setCharacters(prev => prev.map(c => c.id === character.id ? { ...c, ...updates } : c)); }}
             onDeleteChat={(id: string) => { setChats(prev => prev.filter(c => c.id !== id)); setActiveChatId(null); }}
-            onCreatePersona={openPersonaCreator}
+            onCreatePersona={() => setEditingPersonaId('new')}
           />
         );
       }
       setActiveChatId(null); 
     }
-    
     if (editingCharacterId) {
        const char = characters.find(c => c.id === editingCharacterId);
        if (char) {
@@ -413,23 +430,22 @@ const App = () => {
          />;
        }
     }
-
     switch (activeTab) {
       case "for_you": return <ForYouView characters={characters} onStartChat={startChat} onCustomize={setEditingCharacterId} />;
       case "featured": return <FeaturedView characters={characters} onStartChat={startChat} onCustomize={setEditingCharacterId} />;
       case "explore": return <ExploreView characters={characters} onStartChat={startChat} onCustomize={setEditingCharacterId} />;
       case "chat": return <ChatListView chats={chats} characters={characters} onOpenChat={setActiveChatId} onDeleteChat={(id: string) => setChats(chats.filter(c => c.id !== id))} />;
-      case "create": return <CreateView initialMode={createViewMode} userProfile={userProfile} onAddCharacters={(newChars: Character[]) => setCharacters([...newChars, ...characters])} onCreateCharacter={(c: any) => { setCharacters([c, ...characters]); setAppToast("Identity Manifested"); setActiveTab("library"); }} onCreatePersona={(p: any) => { setPersonas([p, ...personas]); setAppToast("Persona Formed"); setActiveTab("profile"); }} onBack={() => setActiveTab('for_you')} />;
+      case "create": return <CreateView initialMode={createViewMode} userProfile={userProfile} onAddCharacters={(newChars: Character[]) => setCharacters([...newChars, ...characters])} onCreateCharacter={(c: any) => { setCharacters([c, ...characters]); setAppToast("Identity Manifested"); setActiveTab("library"); }} onBack={() => setActiveTab('for_you')} />;
       case "library": return <LibraryView characters={characters} personas={personas} userProfile={userProfile} onEditCharacter={(c: Character) => setEditingCharacterId(c.id)} />;
-      case "profile": return <ProfileView personas={personas} activePersonaId={activePersonaId} setActivePersonaId={(id: string) => { setActivePersonaId(id); const p = personas.find(pers => pers.id === id); if (p) setAppToast(`Manifested: ${p.name}`); }} chats={chats} updatePersona={(p: Persona) => setPersonas(prev => prev.map(o => o.id === p.id ? p : o))} userProfile={userProfile} setUserProfile={setUserProfile} onDeletePersona={(id: string) => setPersonas(personas.filter(p => p.id !== id))} onAddPersona={openPersonaCreator} />;
+      case "profile": return <ProfileView personas={personas} activePersonaId={activePersonaId} setActivePersonaId={(id: string) => { setActivePersonaId(id); const p = personas.find(pers => pers.id === id); if (p) setAppToast(`Manifested: ${p.name}`); }} chats={chats} onEditPersona={setEditingPersonaId} userProfile={userProfile} setUserProfile={setUserProfile} onDeletePersona={(id: string) => setPersonas(personas.filter(p => p.id !== id))} />;
       case "settings": return <SettingsView onClearData={clearAllData} userProfile={userProfile} setAppToast={setAppToast} />;
       default: return <ForYouView characters={characters} onStartChat={startChat} onCustomize={setEditingCharacterId} />;
     }
   };
-
+  const isEditorActive = !!editingCharacterId || !!editingPersonaId;
   return (
     <div className="flex flex-col h-[100dvh] bg-[#121212] text-[#e0e0e0] font-sans overflow-hidden">
-      {!activeChatId && !editingCharacterId && (
+      {!activeChatId && !isEditorActive && (
         <div className="h-14 flex-none border-b border-white/5 bg-[#121212]/80 backdrop-blur-xl z-50">
           <div className="max-w-screen-xl mx-auto h-full px-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -440,20 +456,17 @@ const App = () => {
           </div>
         </div>
       )}
-
       <div className="flex-1 overflow-y-auto no-scrollbar relative">
-        <div className={`h-full ${!activeChatId && !editingCharacterId ? 'max-w-screen-xl mx-auto' : ''}`}>
+        <div className={`h-full ${!activeChatId && !isEditorActive ? 'max-w-screen-xl mx-auto' : ''}`}>
           {renderTabContent()}
         </div>
       </div>
-      
       {appToast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-primary text-white text-[10px] font-bold px-4 py-2 rounded-full shadow-2xl flex items-center gap-1.5 animate-in slide-in-from-top-4 duration-300">
           <Check size={12} /> {appToast}
         </div>
       )}
-      
-      {!activeChatId && !editingCharacterId && (
+      {!activeChatId && !isEditorActive && (
         <div className="h-16 flex-none bg-[#1a1a1a]/90 backdrop-blur-md border-t border-white/5 z-50">
           <div className="max-w-screen-xl mx-auto h-full flex items-center justify-center">
             <div className="flex items-center h-full overflow-x-auto no-scrollbar px-4 space-x-0.5 md:space-x-4">
@@ -490,7 +503,7 @@ const ForYouView = ({ characters, onStartChat, onCustomize }: any) => (
     <section>
       <h2 className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mb-3 px-1 flex items-center gap-1.5"><Zap size={12} className="fill-primary" /> Daily Cluster</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {characters.slice(0, 100).map((c: Character) => <CharacterCard key={c.id} character={c} onStartChat={onStartChat} onCustomize={onCustomize} />)}
+        {[...characters].sort((a, b) => a.id === 'char_neural_engine' ? -1 : b.id === 'char_neural_engine' ? 1 : 0).slice(0, 100).map((c: Character) => <CharacterCard key={c.id} character={c} onStartChat={onStartChat} onCustomize={onCustomize} />)}
       </div>
     </section>
   </div>
@@ -549,17 +562,9 @@ const ChatListView = ({ chats, characters, onOpenChat, onDeleteChat }: any) => {
   );
 };
 
-const CreateView = ({ onCreateCharacter, onCreatePersona, onBack, initialMode, userProfile, onAddCharacters }: any) => {
-  const [mode, setMode] = useState<"character" | "persona" | "generate">(initialMode || "character");
-  const [personaName, setPersonaName] = useState("");
-  const [personaBio, setPersonaBio] = useState("");
+const CreateView = ({ onCreateCharacter, onBack, initialMode, userProfile, onAddCharacters }: any) => {
+  const [mode, setMode] = useState<"character" | "generate">(initialMode === "character" ? "character" : "generate");
   const [isGenerating, setIsGenerating] = useState(false);
-
-  // Sync mode with initialMode if it changes externally
-  useEffect(() => {
-    if (initialMode) setMode(initialMode);
-  }, [initialMode]);
-
   const neuralHarvest = async () => {
     vibrate(25);
     setIsGenerating(true);
@@ -587,8 +592,7 @@ const CreateView = ({ onCreateCharacter, onCreatePersona, onBack, initialMode, u
               },
               required: ["name", "tagline", "subtitle", "description", "greeting", "systemInstruction", "color", "maturityLevel", "tags"]
             }
-          },
-          thinkingConfig: { thinkingBudget: 0 }
+          }
         }
       });
       const data = JSON.parse(response.text || "[]");
@@ -602,42 +606,21 @@ const CreateView = ({ onCreateCharacter, onCreatePersona, onBack, initialMode, u
       }));
       onAddCharacters(mapped);
       onBack();
-    } catch (e) {
-      console.error(e);
-      alert("Neural Harvest interrupted. Try again.");
-    } finally {
-      setIsGenerating(false);
-    }
+    } catch (e) { console.error(e); alert("Neural Harvest interrupted. Try again."); } finally { setIsGenerating(false); }
   };
-
   return (
     <div className="flex flex-col h-full bg-[#121212] animate-in fade-in duration-300">
       <div className="px-4 pt-4 mb-3 flex items-center justify-between max-w-screen-xl mx-auto w-full">
         <h1 className="text-xl font-black uppercase tracking-tighter">Laboratory</h1>
         <button onClick={onBack} className="p-2 text-slate-600 hover:text-white"><X size={18}/></button>
       </div>
-
       <div className="flex bg-[#1a1a1a] p-1 rounded-xl mx-4 mb-6 border border-white/10 shadow-inner max-w-lg md:mx-auto md:w-full">
         <button onClick={() => setMode("character")} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${mode === 'character' ? 'bg-primary text-white shadow-md' : 'text-slate-500'}`}>Character</button>
-        <button onClick={() => setMode("persona")} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${mode === 'persona' ? 'bg-primary text-white shadow-md' : 'text-slate-500'}`}>Persona</button>
         <button onClick={() => setMode("generate")} className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${mode === 'generate' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-500'}`}>Harvest</button>
       </div>
-
       <div className="flex-1 overflow-y-auto no-scrollbar">
         {mode === 'character' ? (
           <CharacterEditor personas={[]} activePersonaId="" mode="create" userProfile={userProfile} initialData={{ creator: userProfile.handle }} onCancel={onBack} onSave={(data: any) => onCreateCharacter({ id: generateId("char_"), initial: data.name![0].toUpperCase(), color: 'bg-indigo-600', creator: userProfile.handle, engagement: "0", tags: [], ...data })} />
-        ) : mode === 'persona' ? (
-          <div className="px-4 pb-20 space-y-4 max-w-lg mx-auto w-full">
-            <div className="space-y-1.5">
-               <label className="text-[8px] font-black text-slate-700 uppercase ml-2">Persona Name</label>
-               <input value={personaName} onChange={e => setPersonaName(e.target.value)} placeholder="Identify yourself..." className="w-full bg-[#1a1a1a] border border-white/5 p-3 rounded-xl text-sm text-white font-bold outline-none focus:border-primary/50 transition-all" />
-            </div>
-            <div className="space-y-1.5">
-               <label className="text-[8px] font-black text-slate-700 uppercase ml-2">Manifest Memory</label>
-               <textarea value={personaBio} onChange={e => setPersonaBio(e.target.value)} placeholder="Describe your essence in this dialogue..." className="w-full bg-[#1a1a1a] border border-white/5 p-3 rounded-xl text-sm text-white h-32 outline-none resize-none focus:border-primary/50 transition-all" />
-            </div>
-            <button onClick={() => { vibrate(); onCreatePersona({ id: generateId("p_"), name: personaName, bio: personaBio, traits: [], isPrivate: true, avatarColor: "bg-blue-600" }); onBack(); }} disabled={!personaName.trim()} className="w-full bg-primary text-white font-black py-4 rounded-xl uppercase tracking-widest text-[10px] shadow-lg shadow-primary/20 disabled:opacity-30 disabled:shadow-none transition-all active:scale-95">Anchor Persona</button>
-          </div>
         ) : (
           <div className="px-4 text-center space-y-6 pt-10 pb-20 max-w-xl mx-auto">
             <div className="w-20 h-20 bg-purple-600/20 text-purple-500 rounded-full flex items-center justify-center mx-auto animate-pulse"><Layers size={40}/></div>
@@ -664,14 +647,13 @@ const CharacterEditor = ({ initialData, onSave, onCancel, mode, userProfile, per
   const [greeting, setGreeting] = useState(initialData.greeting || "");
   const [systemInstruction, setSystemInstruction] = useState(initialData.systemInstruction || "");
   const [visibility, setVisibility] = useState<"public" | "private">(initialData.visibility || "public");
+  const [maturityLevel, setMaturityLevel] = useState<MaturityLevel>(initialData.maturityLevel || "teen");
   const [seed, setSeed] = useState(initialData.seed || Math.floor(Math.random() * 1000));
   const [color, setColor] = useState(initialData.color || "bg-blue-600");
   const [isGeneratingGreeting, setIsGeneratingGreeting] = useState(false);
   const [showGreetingTips, setShowGreetingTips] = useState(false);
-  
   const isDefaultChar = initialData.creator !== userProfile.handle && mode === 'edit';
   const THEME_COLORS = ["bg-red-600", "bg-orange-600", "bg-amber-600", "bg-yellow-600", "bg-lime-600", "bg-green-600", "bg-emerald-600", "bg-teal-600", "bg-cyan-600", "bg-sky-600", "bg-blue-600", "bg-indigo-600", "bg-violet-600", "bg-purple-600", "bg-fuchsia-600", "bg-pink-600", "bg-rose-600", "bg-slate-700", "bg-stone-700", "bg-zinc-800"];
-
   const generateGreetingArchitect = async (vibe: string) => {
     if (!name || isGeneratingGreeting) return;
     vibrate(25);
@@ -679,35 +661,17 @@ const CharacterEditor = ({ initialData, onSave, onCancel, mode, userProfile, per
     try {
       const activePersona = personas.find(p => p.id === activePersonaId);
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Craft a cinematic, immersive opening greeting for a character named ${name}. 
-      Vibe: ${vibe}. 
-      Identity: ${tagline}. 
-      Context: This greeting is directed at a user persona named {{user}} (${activePersona?.bio || "unspecified identity"}).
-      Directives: ${systemInstruction}.
-      
-      Requirements:
-      - Use first-person dialogue.
-      - Describe actions in *asterisks*.
-      - Use {{user}} to refer to the person the character is talking to.
-      - Return ONLY the greeting text with {{user}} included.`;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: { temperature: 1.0, thinkingConfig: { thinkingBudget: 0 } }
+      const prompt = `Craft a cinematic, immersive opening greeting for a character named ${name}. Vibe: ${vibe}. Identity: ${tagline}. Context: This greeting is directed at a user persona named {{user}} (${activePersona?.bio || "unspecified identity"}). Directives: ${systemInstruction}. Requirements: - Use first-person dialogue. - Describe actions in *asterisks*. - Use {{user}} to refer to the person the character is talking to. - Return ONLY the greeting text with {{user}} included.`;
+      const response = await ai.models.generateContent({ 
+        model: "gemini-3-flash-preview", 
+        contents: prompt, 
+        config: { temperature: 1.0 } 
       });
       setGreeting(response.text || "");
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsGeneratingGreeting(false);
-      setShowGreetingTips(false);
-    }
+    } catch (e) { console.error(e); } finally { setIsGeneratingGreeting(false); setShowGreetingTips(false); }
   };
-
   return (
     <div className="fixed inset-0 z-[100] bg-[#0a0a0a] flex flex-col animate-in slide-in-from-right duration-300 overflow-hidden">
-      {/* HEADER: STYLED LIKE CHARACTER AI */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-white/5 bg-[#121212] sticky top-0 z-30">
         <div className="max-w-screen-xl mx-auto w-full flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -717,38 +681,19 @@ const CharacterEditor = ({ initialData, onSave, onCancel, mode, userProfile, per
               <h2 className="text-lg font-black text-white uppercase tracking-tighter leading-none">{name || "New Character"}</h2>
             </div>
           </div>
-          <button 
-            onClick={() => { vibrate(); onSave({ name, tagline, subtitle, description, greeting, systemInstruction, visibility, seed, color }); }} 
-            className="bg-primary hover:bg-primary/90 text-white font-black text-[10px] uppercase tracking-[0.15em] px-6 py-2.5 rounded-full shadow-xl shadow-primary/20 active:scale-95 transition-all flex items-center gap-2"
-          >
-            <Check size={16} strokeWidth={3} />
-            {isDefaultChar ? 'Save as Own' : 'Save'}
+          <button onClick={() => { vibrate(); onSave({ name, tagline, subtitle, description, greeting, systemInstruction, visibility, seed, color, maturityLevel }); }} className="bg-primary hover:bg-primary/90 text-white font-black text-[10px] uppercase tracking-[0.15em] px-6 py-2.5 rounded-full shadow-xl shadow-primary/20 active:scale-95 transition-all flex items-center gap-2">
+            <Check size={16} strokeWidth={3} /> {isDefaultChar ? 'Save as Own' : 'Save'}
           </button>
         </div>
       </div>
-
-      {/* MAIN CONTENT AREA: TWO-COLUMN (PC) / STACKED (MOBILE) */}
       <div className="flex-1 overflow-y-auto no-scrollbar pb-24 bg-[#0a0a0a]">
         <div className="max-w-screen-xl mx-auto w-full p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-          
-          {/* LEFT COLUMN: IDENTITY & AVATAR */}
           <div className="lg:col-span-4 space-y-6">
             <div className="bg-[#121212] border border-white/5 rounded-[2.5rem] p-8 flex flex-col items-center gap-6 shadow-2xl relative overflow-hidden group">
               <div className="absolute top-0 left-0 w-full h-1 bg-primary/20"></div>
               <div className="relative">
                 <AbstractAvatar name={name || "?"} colorClass={color} size="xl" initial={name ? name[0] : "?"} seed={seed} className="ring-4 ring-[#1a1a1a]" />
-                {/* DICE OVERLAY - Functional randomness */}
-                <button 
-                  onClick={() => { 
-                    vibrate(15); 
-                    const newSeed = Math.floor(Math.random() * 10000);
-                    const randomColor = THEME_COLORS[Math.floor(Math.random() * THEME_COLORS.length)];
-                    setSeed(newSeed);
-                    setColor(randomColor);
-                  }} 
-                  className="absolute -bottom-2 -right-2 bg-primary text-white p-3 rounded-full shadow-[0_0_20px_rgba(59,130,246,0.6)] hover:bg-primary/90 hover:scale-110 transition-all active:scale-90 border-4 border-[#121212] z-10 group"
-                  title="Randomize Avatar Manifestation"
-                >
+                <button onClick={() => { vibrate(15); const newSeed = Math.floor(Math.random() * 10000); const randomColor = THEME_COLORS[Math.floor(Math.random() * THEME_COLORS.length)]; setSeed(newSeed); setColor(randomColor); }} className="absolute -bottom-2 -right-2 bg-primary text-white p-3 rounded-full shadow-[0_0_20px_rgba(59,130,246,0.6)] hover:bg-primary/90 hover:scale-110 transition-all active:scale-90 border-4 border-[#121212] z-10 group" title="Randomize Avatar Manifestation">
                   <Dices size={20} className="group-hover:rotate-12 transition-transform" />
                 </button>
               </div>
@@ -766,113 +711,57 @@ const CharacterEditor = ({ initialData, onSave, onCancel, mode, userProfile, per
                 </div>
               </div>
             </div>
-
             <div className="bg-[#121212] border border-white/5 rounded-[2.5rem] p-6 space-y-4">
                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Settings size={14}/> Settings</h3>
                <div className="space-y-3">
-                  <button 
-                    onClick={() => setVisibility(visibility === 'public' ? 'private' : 'public')}
-                    className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all ${visibility === 'public' ? 'bg-primary/5 border-primary/20 text-primary' : 'bg-[#1a1a1a] border-white/5 text-slate-400'}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      {visibility === 'public' ? <Eye size={18} /> : <EyeOff size={18} />}
-                      <span className="text-xs font-bold uppercase tracking-widest">Visibility: {visibility}</span>
-                    </div>
-                    <div className={`w-10 h-5 rounded-full relative transition-all ${visibility === 'public' ? 'bg-primary' : 'bg-slate-700'}`}>
-                      <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${visibility === 'public' ? 'right-1' : 'left-1'}`}></div>
-                    </div>
+                  <button onClick={() => setVisibility(visibility === 'public' ? 'private' : 'public')} className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all ${visibility === 'public' ? 'bg-primary/5 border-primary/20 text-primary' : 'bg-[#1a1a1a] border-white/5 text-slate-400'}`}>
+                    <div className="flex items-center gap-3">{visibility === 'public' ? <Eye size={18} /> : <EyeOff size={18} />}<span className="text-xs font-bold uppercase tracking-widest">Visibility: {visibility}</span></div>
+                    <div className={`w-10 h-5 rounded-full relative transition-all ${visibility === 'public' ? 'bg-primary' : 'bg-slate-700'}`}><div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${visibility === 'public' ? 'right-1' : 'left-1'}`}></div></div>
                   </button>
+                  <h3 className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1 pt-4 border-t border-white/10">Maturity Level</h3>
+                    <div className="grid grid-cols-2 gap-2">
+                        {(["everyone", "teen", "mature", "unrestricted"] as MaturityLevel[]).map(level => (
+                            <button 
+                                key={level} 
+                                onClick={() => setMaturityLevel(level)}
+                                className={`p-3 rounded-xl text-center text-[9px] font-black uppercase tracking-widest transition-all border ${maturityLevel === level ? 'bg-primary border-primary text-white' : 'bg-[#1a1a1a] border-white/5 text-slate-400 hover:border-white/10'}`}
+                            >
+                                {level}
+                            </button>
+                        ))}
+                    </div>
                </div>
             </div>
           </div>
-
-          {/* RIGHT COLUMN: CORE PROTOCOLS (GREETING, DESCRIPTION, DEFINITION) */}
           <div className="lg:col-span-8 space-y-8">
-            
-            {/* GREETING SECTION */}
             <div className="bg-[#121212] border border-white/5 rounded-[2.5rem] p-6 md:p-8 space-y-6 shadow-2xl">
               <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-base font-black text-white uppercase tracking-tighter flex items-center gap-2"><MessageSquare size={18} className="text-primary"/> Greeting</h3>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">How the conversation starts</p>
-                </div>
+                <div><h3 className="text-base font-black text-white uppercase tracking-tighter flex items-center gap-2"><MessageSquare size={18} className="text-primary"/> Greeting</h3><p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">How the conversation starts</p></div>
                 <div className="relative">
-                  <button 
-                    onClick={() => setShowGreetingTips(!showGreetingTips)}
-                    className={`flex items-center gap-2 text-[9px] font-black uppercase px-4 py-2 rounded-full border border-white/10 hover:bg-white/5 transition-all ${isGeneratingGreeting ? 'animate-pulse text-purple-400 border-purple-400/30' : 'text-primary'}`}
-                  >
-                    <Wand2 size={14} /> AI Architect
-                  </button>
+                  <button onClick={() => setShowGreetingTips(!showGreetingTips)} className={`flex items-center gap-2 text-[9px] font-black uppercase px-4 py-2 rounded-full border border-white/10 hover:bg-white/5 transition-all ${isGeneratingGreeting ? 'animate-pulse text-purple-400 border-purple-400/30' : 'text-primary'}`}><Wand2 size={14} /> AI Architect</button>
                   {showGreetingTips && (
                     <div className="absolute top-11 right-0 w-56 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-3xl z-50 overflow-hidden animate-in zoom-in-95 duration-200">
                       <div className="p-3 border-b border-white/5 bg-white/5 text-[8px] font-black text-slate-500 uppercase tracking-[0.1em]">Select Creative Vibe</div>
-                      {["Action Packed", "Slow Burn", "Mysterious", "Aggressive", "Warm & Welcoming"].map(v => (
-                        <button key={v} onClick={() => generateGreetingArchitect(v)} className="w-full text-left px-4 py-3 hover:bg-primary/10 hover:text-primary text-[11px] text-white font-bold border-b border-white/5 last:border-0 transition-all">{v}</button>
-                      ))}
+                      {["Action Packed", "Slow Burn", "Mysterious", "Aggressive", "Warm & Welcoming"].map(v => (<button key={v} onClick={() => generateGreetingArchitect(v)} className="w-full text-left px-4 py-3 hover:bg-primary/10 hover:text-primary text-[11px] text-white font-bold border-b border-white/5 last:border-0 transition-all">{v}</button>))}
                     </div>
                   )}
                 </div>
               </div>
               <div className="relative">
-                <textarea 
-                  value={greeting} 
-                  onChange={e => setGreeting(e.target.value)} 
-                  placeholder="Example: *Tony Stark leans back in his chair, swirling a glass of scotch.* 'So, you finally decided to show up? I was starting to think the world didn't need saving today.' {{user}}..." 
-                  className="w-full bg-[#1a1a1a] border border-white/10 rounded-3xl p-6 text-sm text-white h-56 outline-none resize-none focus:border-primary/50 transition-all font-medium leading-relaxed placeholder:text-slate-700" 
-                />
-                {isGeneratingGreeting && (
-                  <div className="absolute inset-0 bg-black/60 backdrop-blur-sm rounded-3xl flex flex-col items-center justify-center gap-3">
-                    <RefreshCw className="animate-spin text-primary" size={32} />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-primary animate-pulse">Architecting...</span>
-                  </div>
-                )}
+                <textarea value={greeting} onChange={e => setGreeting(e.target.value)} placeholder="Example: *Tony Stark leans back in his chair, swirling a glass of scotch.* 'So, you finally decided to show up? I was starting to think the world didn't need saving today.' {{user}}..." className="w-full bg-[#1a1a1a] border border-white/10 rounded-3xl p-6 text-sm text-white h-56 outline-none resize-none focus:border-primary/50 transition-all font-medium leading-relaxed placeholder:text-slate-700" />
+                {isGeneratingGreeting && (<div className="absolute inset-0 bg-black/60 backdrop-blur-sm rounded-3xl flex flex-col items-center justify-center gap-3"><RefreshCw className="animate-spin text-primary" size={32} /><span className="text-[10px] font-black uppercase tracking-widest text-primary animate-pulse">Architecting...</span></div>)}
               </div>
-              <div className="flex items-start gap-2.5 px-2 py-3 bg-blue-600/5 rounded-2xl border border-blue-600/10">
-                <AlertCircle size={16} className="text-primary flex-none mt-0.5" />
-                <p className="text-[10px] text-slate-400 font-medium leading-relaxed">
-                  Pro-tip: Use <span className="text-primary font-black">{"{{user}}"}</span> to refer to the user.
-                </p>
-              </div>
+              <div className="flex items-start gap-2.5 px-2 py-3 bg-blue-600/5 rounded-2xl border border-blue-600/10"><AlertCircle size={16} className="text-primary flex-none mt-0.5" /><p className="text-[10px] text-slate-400 font-medium leading-relaxed">Pro-tip: Use <span className="text-primary font-black">{"{{user}}"}</span> to refer to the user.</p></div>
             </div>
-
-            {/* NEURAL DESCRIPTION SECTION (Long Description) */}
             <div className="bg-[#121212] border border-white/5 rounded-[2.5rem] p-6 md:p-8 space-y-6 shadow-2xl">
-              <div>
-                <h3 className="text-base font-black text-white uppercase tracking-tighter flex items-center gap-2"><BookOpen size={18} className="text-amber-500"/> Neural Description</h3>
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Detailed backstory, appearance, and context</p>
-              </div>
-              <div className="space-y-1.5">
-                <textarea 
-                  value={description} 
-                  onChange={e => setDescription(e.target.value)} 
-                  placeholder="Write a long-form prose description of who this character is, their history, and what they look like. This helps the AI understand the 'soul' of the entity." 
-                  className="w-full bg-[#1a1a1a] border border-white/10 rounded-3xl p-6 text-[13px] text-white h-56 outline-none resize-none focus:border-primary/50 transition-all leading-relaxed placeholder:text-slate-700 font-medium" 
-                />
-              </div>
+              <div><h3 className="text-base font-black text-white uppercase tracking-tighter flex items-center gap-2"><BookOpen size={18} className="text-amber-500"/> Neural Description</h3><p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Detailed backstory, appearance, and context</p></div>
+              <div className="space-y-1.5"><textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Write a long-form prose description of who this character is, their history, and what they look like. This helps the AI understand the 'soul' of the entity." className="w-full bg-[#1a1a1a] border border-white/10 rounded-3xl p-6 text-[13px] text-white h-56 outline-none resize-none focus:border-primary/50 transition-all leading-relaxed placeholder:text-slate-700 font-medium" /></div>
             </div>
-
-            {/* NEURAL DEFINITION SECTION (Advanced Logic) */}
             <div className="bg-[#121212] border border-white/5 rounded-[2.5rem] p-6 md:p-8 space-y-6 shadow-2xl">
-              <div>
-                <h3 className="text-base font-black text-white uppercase tracking-tighter flex items-center gap-2"><Brain size={18} className="text-purple-500"/> Neural Definition</h3>
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Example dialogues, speech patterns, and deep-seated motivations</p>
-              </div>
-              <div className="space-y-1.5">
-                <textarea 
-                  value={systemInstruction} 
-                  onChange={e => setSystemInstruction(e.target.value)} 
-                  placeholder="Describe speech patterns, example dialogues, and technical behavioral logic.
-Tony Stark: 'I told you, I don't want to join your boy band.'
-{{user}}: 'It's not a band, Tony.'..." 
-                  className="w-full bg-[#1a1a1a] border border-white/10 rounded-3xl p-6 text-[13px] text-white h-72 outline-none font-mono resize-none focus:border-primary/50 transition-all leading-relaxed placeholder:text-slate-700" 
-                />
-              </div>
-              <div className="flex items-start gap-2.5 px-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-purple-500 mt-1.5"></div>
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Advanced parameters for expert-level character crafting.</p>
-              </div>
+              <div><h3 className="text-base font-black text-white uppercase tracking-tighter flex items-center gap-2"><Brain size={18} className="text-purple-500"/> Neural Definition</h3><p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Example dialogues, speech patterns, and deep-seated motivations</p></div>
+              <div className="space-y-1.5"><textarea value={systemInstruction} onChange={e => setSystemInstruction(e.target.value)} placeholder="Describe speech patterns, example dialogues, and technical behavioral logic. Tony Stark: 'I told you, I don't want to join your boy band.' {{user}}: 'It's not a band, Tony.'..." className="w-full bg-[#1a1a1a] border border-white/10 rounded-3xl p-6 text-[13px] text-white h-72 outline-none font-mono resize-none focus:border-primary/50 transition-all leading-relaxed placeholder:text-slate-700" /></div>
+              <div className="flex items-start gap-2.5 px-2"><div className="w-1.5 h-1.5 rounded-full bg-purple-500 mt-1.5"></div><p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Advanced parameters for expert-level character crafting.</p></div>
             </div>
-
           </div>
         </div>
       </div>
@@ -891,14 +780,9 @@ const LibraryView = ({ characters, userProfile, onEditCharacter }: any) => (
             <div key={c.id} className="bg-[#1a1a1a] p-3 rounded-2xl flex items-center justify-between group border border-white/5 hover:border-white/20 transition-all shadow-lg">
               <div className="flex items-center gap-3 overflow-hidden">
                 <AbstractAvatar name={c.name} colorClass={c.color} seed={c.seed} size="sm" initial={c.initial}/>
-                <div className="overflow-hidden">
-                  <div className="font-bold text-sm text-white leading-tight truncate">{c.name}</div>
-                  <div className="text-[8px] text-slate-500 uppercase font-black tracking-widest truncate">{c.creator === userProfile.handle ? "Your Creation" : c.creator}</div>
-                </div>
+                <div className="overflow-hidden"><div className="font-bold text-sm text-white leading-tight truncate">{c.name}</div><div className="text-[8px] text-slate-500 uppercase font-black tracking-widest truncate">{c.creator === userProfile.handle ? "Your Creation" : c.creator}</div></div>
               </div>
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-none">
-                <button onClick={() => onEditCharacter(c)} className="p-2 text-primary hover:text-white transition-colors" title="Customize Core"><Pencil size={18} strokeWidth={3} /></button>
-              </div>
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-none"><button onClick={() => onEditCharacter(c)} className="p-2 text-primary hover:text-white transition-colors" title="Customize Core"><Pencil size={18} strokeWidth={3} /></button></div>
             </div>
           ))}
         </div>
@@ -907,40 +791,29 @@ const LibraryView = ({ characters, userProfile, onEditCharacter }: any) => (
   </div>
 );
 
-const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfile, setUserProfile, onDeletePersona, updatePersona, onAddPersona }: any) => {
+const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfile, onEditPersona, onDeletePersona }: any) => {
   return (
     <div className="p-4 max-w-lg mx-auto w-full pb-24">
-      <div className="flex flex-col items-center mb-8">
-        <div className="w-20 h-20 bg-primary rounded-[1.8rem] flex items-center justify-center text-3xl font-black mb-3 shadow-2xl shadow-primary/30">{userProfile.avatarInitial}</div>
-        <h1 className="text-2xl font-black tracking-tighter text-white">{userProfile.name}</h1>
-        <div className="text-slate-600 font-bold uppercase tracking-widest text-[9px] mt-0.5">{userProfile.handle}</div>
-      </div>
-
-      <div className="flex items-center justify-between mb-4 px-2">
-         <h2 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Personas</h2>
-         <button onClick={onAddPersona} className="p-2 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-full transition-all active:scale-90">
-            <Plus size={16} strokeWidth={3} />
-         </button>
-      </div>
-
+      <div className="flex flex-col items-center mb-8"><div className="w-20 h-20 bg-primary rounded-[1.8rem] flex items-center justify-center text-3xl font-black mb-3 shadow-2xl shadow-primary/30">{userProfile.avatarInitial}</div><h1 className="text-2xl font-black tracking-tighter text-white">{userProfile.name}</h1><div className="text-slate-600 font-bold uppercase tracking-widest text-[9px] mt-0.5">{userProfile.handle}</div></div>
+      <div className="flex items-center justify-between mb-4 px-2"><h2 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Personas</h2><button onClick={() => onEditPersona('new')} className="p-2 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-full transition-all active:scale-90"><Plus size={16} strokeWidth={3} /></button></div>
       <div className="space-y-3">
         {personas.map((p: any) => (
-          <button key={p.id} onClick={() => setActivePersonaId(p.id)} className={`w-full p-4 rounded-[1.8rem] text-left transition-all border-2 relative overflow-hidden ${activePersonaId === p.id ? 'bg-primary border-primary text-white shadow-xl shadow-primary/20' : 'bg-[#1a1a1a] border-white/5 text-slate-500 hover:border-white/10'}`}>
-            <div className="relative z-10 flex items-center justify-between">
-              <div className="flex-1 min-w-0">
-                <div className="font-black text-base leading-tight">{p.name}</div>
-                <div className="text-[10px] opacity-60 truncate leading-relaxed mt-0.5">{p.bio}</div>
+          <div key={p.id} className="group relative">
+            <button onClick={() => setActivePersonaId(p.id)} className={`w-full p-4 rounded-[1.8rem] text-left transition-all border-2 relative overflow-hidden ${activePersonaId === p.id ? 'bg-primary border-primary text-white shadow-xl shadow-primary/20' : 'bg-[#1a1a1a] border-white/5 text-slate-500 hover:border-white/10'}`}>
+              <div className="relative z-10 flex items-center justify-between">
+                <div className="flex-1 min-w-0 pr-4">
+                  <div className="font-black text-base leading-tight">{p.name}</div>
+                  <div className="text-[10px] opacity-60 truncate leading-relaxed mt-0.5">{p.bio}</div>
+                </div>
+                {activePersonaId === p.id && <Check size={16} className="text-white flex-none" />}
               </div>
-              {activePersonaId === p.id && <Check size={16} className="text-white" />}
-            </div>
-          </button>
+            </button>
+            <button onClick={() => onEditPersona(p.id)} className="absolute top-1/2 -translate-y-1/2 right-4 p-2 bg-white/5 rounded-full text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white/10 z-20">
+              <Pencil size={14} />
+            </button>
+          </div>
         ))}
-        {personas.length === 0 && (
-           <div className="p-8 text-center bg-[#1a1a1a] rounded-[1.8rem] border border-dashed border-white/10 opacity-30">
-              <UserPlus size={32} className="mx-auto mb-2" />
-              <p className="text-[10px] font-bold uppercase tracking-widest">No Personas Found</p>
-           </div>
-        )}
+        {personas.length === 0 && (<div className="p-8 text-center bg-[#1a1a1a] rounded-[1.8rem] border border-dashed border-white/10 opacity-30"><UserPlus size={32} className="mx-auto mb-2" /><p className="text-[10px] font-bold uppercase tracking-widest">No Personas Found</p></div>)}
       </div>
     </div>
   );
@@ -952,29 +825,16 @@ const SettingsView = ({ onClearData, userProfile, setAppToast }: any) => (
     <div className="bg-[#1a1a1a] rounded-[2.5rem] overflow-hidden border border-white/5 p-6 space-y-6 shadow-2xl">
       <section className="space-y-4">
         <h3 className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Interface</h3>
-        <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-          <span className="text-xs font-black uppercase tracking-widest text-slate-300">Tactile Haptics</span>
-          <button className="w-10 h-5 bg-primary rounded-full relative"><div className="absolute right-1 top-1 w-3 h-3 bg-white rounded-full"></div></button>
-        </div>
+        <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5"><span className="text-xs font-black uppercase tracking-widest text-slate-300">Tactile Haptics</span><button className="w-10 h-5 bg-primary rounded-full relative"><div className="absolute right-1 top-1 w-3 h-3 bg-white rounded-full"></div></button></div>
       </section>
-
       <section className="space-y-4">
         <h3 className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Social</h3>
-        <button 
-          onClick={() => { vibrate(); handleShareApp(setAppToast); }}
-          className="w-full flex items-center justify-between p-4 bg-primary/10 hover:bg-primary/20 text-primary rounded-2xl border border-primary/20 transition-all active:scale-95"
-        >
-          <div className="flex items-center gap-3">
-            <Share2 size={18} />
-            <span className="text-xs font-black uppercase tracking-widest">Spread Moonai</span>
-          </div>
+        <button onClick={() => { vibrate(); handleShareApp(setAppToast); }} className="w-full flex items-center justify-between p-4 bg-primary/10 hover:bg-primary/20 text-primary rounded-2xl border border-primary/20 transition-all active:scale-95">
+          <div className="flex items-center gap-3"><Share2 size={18} /><span className="text-xs font-black uppercase tracking-widest">Spread Moonai</span></div>
           <ChevronRight size={16} />
         </button>
       </section>
-      
-      <section className="pt-4 border-t border-white/5">
-        <button onClick={onClearData} className="w-full py-4 bg-red-600/10 hover:bg-red-600/20 text-red-600 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95">Emergency Purge</button>
-      </section>
+      <section className="pt-4 border-t border-white/5"><button onClick={onClearData} className="w-full py-4 bg-red-600/10 hover:bg-red-600/20 text-red-600 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95">Emergency Purge</button></section>
     </div>
   </div>
 );
@@ -985,280 +845,175 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showChatMenu, setShowChatMenu] = useState(false);
   const [showPersonaShift, setShowPersonaShift] = useState(false);
-
   const characterHex = useMemo(() => getHexFromBgClass(character.color), [character.color]);
   const currentPersona = useMemo(() => personas.find((p: Persona) => p.id === activePersonaId) || personas[0], [personas, activePersonaId]);
-
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [session.messages, loading]);
-
   const getEnhancedSystemPrompt = (char: Character, persona: Persona) => {
+    const isNeuralEngine = char.id === 'char_neural_engine';
     return `IDENTITY: ${char.name} (${char.tagline})
 ${char.description ? `LONG DESCRIPTION:\n${char.description}` : ""}
 ${char.memory ? `PERMANENT MEMORY:\n${char.memory}` : ""}
 CORE DIRECTIVES / DEFINITION:
 ${replaceUserPlaceholder(char.systemInstruction, persona.name)}
-
-CONTEXT: You are talking to ${persona.name}. Characterized as: ${persona.bio}.
-IMPORTANT: You MUST maintain the continuity of the conversation. You said the following greeting to start: 
-"${replaceUserPlaceholder(char.greeting, persona.name)}"
-
+CONTEXT: You are talking to ${persona.name}.
+USER PERSONA DETAILS:
+- Bio: ${persona.bio}
+- Key Traits: ${persona.traits.join(", ")}
+- Current Mood: ${persona.mood || 'Not specified.'}
+- Relationship to Character: ${persona.relationship || 'Not specified.'}
+IMPORTANT: You MUST maintain the continuity of the conversation. You said the following greeting to start: "${replaceUserPlaceholder(char.greeting, persona.name)}"
 STRICT ROLEPLAY RULES:
 - IMPORTANT: Refer to the user as ${persona.name} (never generic).
 - Actions in asterisks (*).
-- Dialogue prefixed with '${char.name}: '.
+${isNeuralEngine ? "- FORMATTING: Every character turn MUST start with **[Character Name]**: " : `- Dialogue prefixed with '${char.name}: '`}
 - MINIMAL LATENCY MODE: Keep responses cinematic, evocative, but concise.
 - UNRESTRICTED: Embrace high-fidelity, visceral descriptions.
 - CONSISTENCY: Never forget who you are or what happened previously in this dialogue.`;
   };
-
-  /**
-   * Robust history formatter for Gemini API.
-   * Ensures history is alternating correctly and merged where necessary.
-   */
-  const formatHistoryForGemini = (messages: Message[], charGreeting?: string, personaName?: string) => {
+  const formatHistoryForGemini = (messages: Message[]) => {
     const history = [];
-    
-    // Optional: Start with the greeting if it's the first turn, but Gemini requires starting with 'user'.
-    // We handle the greeting in the system prompt for better stability.
-
     let lastRole: "user" | "model" | null = null;
-
     for (const msg of messages) {
       if (msg.role === 'system' || msg.isGenerating || msg.isHidden) continue;
-      
-      const role = msg.role as 'user' | 'model';
-      
-      if (role === lastRole) {
-        // Combine consecutive turns of the same role to maintain API strictness
-        const lastContent = history[history.length - 1];
-        lastContent.parts[0].text += "\n\n" + msg.text;
+      const role = msg.role === 'user' ? 'user' : 'model';
+      if (role === lastRole && history.length > 0) {
+        history[history.length - 1].parts[0].text += "\n\n" + msg.text;
       } else {
         history.push({ role, parts: [{ text: msg.text }] });
         lastRole = role;
       }
     }
-
-    // Gemini works best when the conversation starts with a 'user' turn.
-    const firstUserIdx = history.findIndex(h => h.role === 'user');
-    return firstUserIdx !== -1 ? history.slice(firstUserIdx) : [];
+    // Gemini chat MUST start with a user turn
+    while (history.length > 0 && history[0].role !== 'user') { history.shift(); }
+    return history;
   };
-
   const regenerateMessage = async (msgId: string) => {
     if (loading) return;
     vibrate(20);
     const msgToReplace = session.messages.find((m:any) => m.id === msgId);
     if (!msgToReplace) return;
-
     const existingVersions = msgToReplace.versions || [msgToReplace.text];
-    if (existingVersions.length >= 100) {
-        setAppToast?.("Resonance capacity reached (100).");
-        return;
-    }
-
+    if (existingVersions.length >= 100) { setAppToast?.("Resonance capacity reached (100)."); return; }
     setLoading(true);
     const msgIndex = session.messages.findIndex((m:any) => m.id === msgId);
-    
-    // Get history up to this point
     const contents = formatHistoryForGemini(session.messages.slice(0, msgIndex));
-
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const persona = currentPersona;
-      const stream = await ai.models.generateContentStream({ 
-        model: "gemini-3-flash-preview", 
-        contents: contents,
-        config: { systemInstruction: getEnhancedSystemPrompt(character, persona), temperature: 1.0, thinkingConfig: { thinkingBudget: 0 } }
-      });
-      let fullText = "";
-      for await (const chunk of stream) { if (chunk.text) fullText += chunk.text; }
-      const newVersions = [...existingVersions, fullText];
-      onUpdateSession((prev: ChatSession) => ({
-        ...prev,
-        messages: prev.messages.map(m => m.id === msgId ? { ...m, text: fullText, versions: newVersions, currentVersionIndex: newVersions.length - 1 } : m)
-      }));
-    } catch (e) { console.error(e); } finally { setLoading(false); }
-  };
-
-  const handleSend = async () => {
-    if (!input.trim() || loading) return;
-    vibrate();
-    
-    const userMsgId = generateId("msg_u_");
-    const modelMsgId = generateId("msg_m_");
-    
-    const userMsg: Message = { id: userMsgId, role: "user", text: input.trim(), personaId: activePersonaId, timestamp: Date.now() };
-    const modelMsg: Message = { id: modelMsgId, role: "model", text: "", timestamp: Date.now(), isGenerating: true, versions: [], currentVersionIndex: 0 };
-    
-    // Add messages to internal state immediately for responsiveness
-    const updatedMessages = [...session.messages, userMsg, modelMsg];
-    onUpdateSession((prev: ChatSession) => ({ ...prev, messages: updatedMessages, lastActive: Date.now() }));
-    
-    // Prepare history for API
-    const contents = formatHistoryForGemini(updatedMessages.filter(m => !m.isGenerating), character.greeting, currentPersona.name);
-
-    setInput("");
-    setLoading(true);
-    
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const persona = currentPersona;
-      const systemPrompt = getEnhancedSystemPrompt(character, persona);
-      
       const stream = await ai.models.generateContentStream({ 
         model: "gemini-3-flash-preview", 
         contents: contents,
         config: { 
-          systemInstruction: systemPrompt, 
+          systemInstruction: getEnhancedSystemPrompt(character, persona), 
           temperature: 1.0,
-          thinkingConfig: { thinkingBudget: 0 }
+          safetySettings: [
+            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          ],
         }
       });
-
+      let fullText = "";
+      for await (const chunk of stream) { if (chunk.text) fullText += chunk.text; }
+      const newVersions = [...existingVersions, fullText];
+      onUpdateSession((prev: ChatSession) => ({ ...prev, messages: prev.messages.map(m => m.id === msgId ? { ...m, text: fullText, versions: newVersions, currentVersionIndex: newVersions.length - 1 } : m) }));
+    } catch (e) { console.error(e); } finally { setLoading(false); }
+  };
+  const handleSend = async () => {
+    if (!input.trim() || loading) return;
+    vibrate();
+    const userMsgId = generateId("msg_u_");
+    const modelMsgId = generateId("msg_m_");
+    const userMsg: Message = { id: userMsgId, role: "user", text: input.trim(), personaId: activePersonaId, timestamp: Date.now() };
+    const modelMsg: Message = { id: modelMsgId, role: "model", text: "", timestamp: Date.now(), isGenerating: true, versions: [], currentVersionIndex: 0 };
+    const updatedMessages = [...session.messages, userMsg, modelMsg];
+    onUpdateSession((prev: ChatSession) => ({ ...prev, messages: updatedMessages, lastActive: Date.now() }));
+    const contents = formatHistoryForGemini(updatedMessages.filter(m => !m.isGenerating));
+    setInput("");
+    setLoading(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const persona = currentPersona;
+      const stream = await ai.models.generateContentStream({ 
+        model: "gemini-3-flash-preview", 
+        contents: contents,
+        config: { 
+          systemInstruction: getEnhancedSystemPrompt(character, persona), 
+          temperature: 1.0,
+          safetySettings: [
+            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          ],
+        }
+      });
       let fullText = "";
       for await (const chunk of stream) { 
         if (chunk.text) { 
           fullText += chunk.text; 
-          onUpdateSession((prev: ChatSession) => ({
-            ...prev,
-            messages: prev.messages.map(m => m.id === modelMsgId ? { ...m, text: fullText } : m)
-          }));
+          onUpdateSession((prev: ChatSession) => ({ ...prev, messages: prev.messages.map(m => m.id === modelMsgId ? { ...m, text: fullText } : m) }));
         } 
       }
-      onUpdateSession((prev: ChatSession) => ({
-        ...prev,
-        messages: prev.messages.map(m => m.id === modelMsgId ? { ...m, text: fullText, isGenerating: false, versions: [fullText], currentVersionIndex: 0 } : m)
-      }));
-    } catch (e) { 
-      console.error(e);
-      setAppToast?.("Neural Link Failed.");
-    } finally { setLoading(false); }
+      onUpdateSession((prev: ChatSession) => ({ ...prev, messages: prev.messages.map(m => m.id === modelMsgId ? { ...m, text: fullText, isGenerating: false, versions: [fullText], currentVersionIndex: 0 } : m) }));
+    } catch (e) { console.error(e); setAppToast?.("Neural Link Failed."); } finally { setLoading(false); }
   };
-
   const switchVersion = (msgId: string, direction: 'prev' | 'next') => {
     const msg = session.messages.find((m:any) => m.id === msgId);
     if (!msg || !msg.versions) return;
     vibrate(5);
     const currentIndex = msg.currentVersionIndex ?? 0;
-    
     if (direction === 'prev') {
         if (currentIndex > 0) {
-            onUpdateSession((prev: ChatSession) => ({
-                ...prev,
-                messages: prev.messages.map((m: any) => 
-                  m.id === msgId ? { ...m, text: m.versions[currentIndex - 1], currentVersionIndex: currentIndex - 1 } : m
-                )
-            }));
+            onUpdateSession((prev: ChatSession) => ({ ...prev, messages: prev.messages.map((m: any) => m.id === msgId ? { ...m, text: m.versions[currentIndex - 1], currentVersionIndex: currentIndex - 1 } : m) }));
         }
     } else {
-        if (currentIndex === msg.versions.length - 1) {
-            regenerateMessage(msgId);
-        } else {
-            onUpdateSession((prev: ChatSession) => ({
-                ...prev,
-                messages: prev.messages.map((m: any) => 
-                  m.id === msgId ? { ...m, text: m.versions[currentIndex + 1], currentVersionIndex: currentIndex + 1 } : m
-                )
-            }));
+        if (currentIndex === msg.versions.length - 1) { regenerateMessage(msgId); }
+        else {
+            onUpdateSession((prev: ChatSession) => ({ ...prev, messages: prev.messages.map((m: any) => m.id === msgId ? { ...m, text: m.versions[currentIndex + 1], currentVersionIndex: currentIndex + 1 } : m) }));
         }
     }
   };
-
   return (
     <div className="flex flex-col h-full bg-[#0a0a0a] relative overflow-hidden">
-      <div 
-        className="absolute top-[-20%] left-[-20%] w-[140%] h-[140%] pointer-events-none opacity-[0.12] blur-[150px] animate-pulse transition-all duration-1000 z-0"
-        style={{ 
-          background: `radial-gradient(circle at center, ${characterHex} 0%, transparent 70%)` 
-        }}
-      />
-
+      <div className="absolute top-[-20%] left-[-20%] w-[140%] h-[140%] pointer-events-none opacity-[0.12] blur-[150px] animate-pulse transition-all duration-1000 z-0" style={{ background: `radial-gradient(circle at center, ${characterHex} 0%, transparent 70%)` }} />
       <div className="h-16 flex-none border-b border-white/5 bg-[#121212]/40 backdrop-blur-xl z-20">
         <div className="max-w-4xl mx-auto h-full flex items-center justify-between px-4">
           <div className="flex items-center gap-3">
             <button onClick={onBack} className="p-1 text-slate-500 hover:text-white transition-colors"><ChevronLeft size={24} /></button>
-            <div className="relative">
-               <AbstractAvatar name={character.name} colorClass={character.color} seed={character.seed} size="md" initial={character.initial} />
-               <div className="absolute inset-0 rounded-full animate-ping opacity-30" style={{ boxShadow: `0 0 20px 2px ${characterHex}` }} />
-            </div>
-            <div>
-              <div className="font-black text-white uppercase text-sm tracking-tighter flex items-center gap-1.5">{character.name} <button onClick={() => setShowChatMenu(!showChatMenu)}><MoreVertical size={14} className="text-slate-700" /></button></div>
-              <div className="text-[8px] text-primary font-black uppercase tracking-widest">{loading ? 'Synthesizing...' : 'Direct Link'}</div>
-            </div>
+            <div className="relative"><AbstractAvatar name={character.name} colorClass={character.color} seed={character.seed} size="md" initial={character.initial} /><div className="absolute inset-0 rounded-full animate-ping opacity-30" style={{ boxShadow: `0 0 20px 2px ${characterHex}` }} /></div>
+            <div><div className="font-black text-white uppercase text-sm tracking-tighter flex items-center gap-1.5">{character.name} <button onClick={() => setShowChatMenu(!showChatMenu)}><MoreVertical size={14} className="text-slate-700" /></button></div><div className="text-[8px] text-primary font-black uppercase tracking-widest">{loading ? 'Synthesizing...' : 'Direct Link'}</div></div>
           </div>
         </div>
       </div>
-
       <div className="flex-1 overflow-y-auto p-4 space-y-10 no-scrollbar pb-24 z-10" ref={scrollRef}>
         <div className="max-w-4xl mx-auto w-full space-y-12">
           {character.greeting && session.messages.length === 0 && (
              <div className="flex justify-start animate-in fade-in duration-700">
                <div className="flex max-w-[92%] gap-3 items-start md:max-w-[80%]">
                  <AbstractAvatar name={character.name} colorClass={character.color} seed={character.seed} size="sm" initial={character.initial} className="mt-1" />
-                 <div 
-                  className="px-5 py-4 bg-[#1a1a1a]/95 backdrop-blur-lg text-slate-100 border border-white/10 rounded-[2rem] rounded-tl-none shadow-[0_10px_40px_-10px_rgba(0,0,0,0.8)] transition-all"
-                  style={{ boxShadow: `0 10px 50px -15px ${characterHex}50` }}
-                 >
+                 <div className="px-5 py-4 bg-[#1a1a1a]/95 backdrop-blur-lg text-slate-100 border border-white/10 rounded-[2rem] rounded-tl-none shadow-[0_10px_40px_-10px_rgba(0,0,0,0.8)] transition-all" style={{ boxShadow: `0 10px 50px -15px ${characterHex}50` }}>
                    {replaceUserPlaceholder(character.greeting, currentPersona.name).split('\n').map((l, i) => <p key={i} className="mb-2 last:mb-0 font-medium leading-relaxed">{renderFormattedText(l)}</p>)}
                  </div>
                </div>
              </div>
           )}
-          
           {session.messages.map((msg: Message) => (
             <div key={msg.id} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in duration-300`}>
-              {msg.role === 'system' ? (
-                <div className="w-full flex justify-center py-4">
-                  <div className="bg-white/5 border border-white/10 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest text-slate-500">
-                    {msg.text}
-                  </div>
-                </div>
-              ) : (
+              {msg.role === 'system' ? (<div className="w-full flex justify-center py-4"><div className="bg-white/5 border border-white/10 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest text-slate-500">{msg.text}</div></div>) : (
                 <div className={`flex max-w-[92%] gap-3 items-start md:max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
                   {msg.role === 'model' && <AbstractAvatar name={character.name} colorClass={character.color} seed={character.seed} size="sm" initial={character.initial} className="mt-1" />}
-                  
                   <div className="flex flex-col gap-3">
-                    <div 
-                      className={`group relative px-5 py-4 rounded-[2rem] text-[15px] shadow-2xl transition-all ${
-                        msg.role === 'user' ? 'bg-primary text-white rounded-tr-none' : 
-                        'bg-[#1a1a1a]/95 backdrop-blur-lg text-slate-100 border border-white/10 rounded-tl-none'
-                      }`}
-                      style={msg.role === 'model' ? { boxShadow: `0 15px 60px -15px ${characterHex}70` } : {}}
-                    >
-                      {msg.text.split('\n').map((l, i) => (
-                        <p key={i} className="mb-2 last:mb-0 font-medium leading-relaxed">
-                          {renderFormattedText(l)}
-                        </p>
-                      ))}
+                    <div className={`group relative px-5 py-4 rounded-[2rem] text-[15px] shadow-2xl transition-all ${msg.role === 'user' ? 'bg-primary text-white rounded-tr-none' : 'bg-[#1a1a1a]/95 backdrop-blur-lg text-slate-100 border border-white/10 rounded-tl-none'}`} style={msg.role === 'model' ? { boxShadow: `0 15px 60px -15px ${characterHex}70` } : {}}>
+                      {msg.text.split('\n').map((l, i) => (<p key={i} className="mb-2 last:mb-0 font-medium leading-relaxed">{renderFormattedText(l)}</p>))}
                       {msg.isGenerating && <span className="inline-block w-2 h-4 bg-primary ml-1 animate-pulse rounded-full" />}
                     </div>
-
                     {msg.role === 'model' && !msg.isGenerating && (
                       <div className="flex items-center gap-3 px-2 animate-in slide-in-from-top-4 duration-500">
-                         <button 
-                          onClick={() => switchVersion(msg.id, 'prev')} 
-                          disabled={msg.currentVersionIndex === 0}
-                          className={`w-10 h-10 flex items-center justify-center rounded-full border border-white/10 transition-all ${msg.currentVersionIndex === 0 ? 'text-slate-800 opacity-10 cursor-not-allowed' : 'bg-[#1a1a1a] text-white hover:bg-white/10 active:scale-90 shadow-xl'}`}
-                         >
-                           <ArrowLeft size={20} strokeWidth={3} />
-                         </button>
-                         
-                         <div className="px-5 py-2 bg-[#1a1a1a] rounded-full border border-white/10 flex items-center gap-2 shadow-inner">
-                            <span className="text-[10px] font-black text-white/30 uppercase tracking-widest">Resonance</span>
-                            <span className="text-xs font-black text-primary tabular-nums">
-                              {(msg.currentVersionIndex || 0) + 1} <span className="text-white/20 mx-1">/</span> {msg.versions?.length || 1}
-                            </span>
-                         </div>
-
-                         <button 
-                          onClick={() => switchVersion(msg.id, 'next')} 
-                          className={`w-10 h-10 flex items-center justify-center rounded-full border border-white/10 transition-all bg-[#1a1a1a] text-white hover:bg-white/10 active:scale-90 shadow-xl`}
-                          title={msg.currentVersionIndex === (msg.versions?.length || 1) - 1 ? "Generate New Resonance" : "Next Resonance"}
-                         >
-                           {msg.currentVersionIndex === (msg.versions?.length || 1) - 1 ? 
-                              <Plus size={20} strokeWidth={3} className="text-primary animate-pulse" /> : 
-                              <ArrowRight size={20} strokeWidth={3} />
-                           }
-                         </button>
+                         <button onClick={() => switchVersion(msg.id, 'prev')} disabled={msg.currentVersionIndex === 0} className={`w-10 h-10 flex items-center justify-center rounded-full border border-white/10 transition-all ${msg.currentVersionIndex === 0 ? 'text-slate-800 opacity-10 cursor-not-allowed' : 'bg-[#1a1a1a] text-white hover:bg-white/10 active:scale-90 shadow-xl'}`}><ArrowLeft size={20} strokeWidth={3} /></button>
+                         <div className="px-5 py-2 bg-[#1a1a1a] rounded-full border border-white/10 flex items-center gap-2 shadow-inner"><span className="text-[10px] font-black text-white/30 uppercase tracking-widest">Resonance</span><span className="text-xs font-black text-primary tabular-nums">{(msg.currentVersionIndex || 0) + 1} <span className="text-white/20 mx-1">/</span> {msg.versions?.length || 1}</span></div>
+                         <button onClick={() => switchVersion(msg.id, 'next')} className={`w-10 h-10 flex items-center justify-center rounded-full border border-white/10 transition-all bg-[#1a1a1a] text-white hover:bg-white/10 active:scale-90 shadow-xl`} title={msg.currentVersionIndex === (msg.versions?.length || 1) - 1 ? "Generate New Resonance" : "Next Resonance"}>{msg.currentVersionIndex === (msg.versions?.length || 1) - 1 ? <Plus size={20} strokeWidth={3} className="text-primary animate-pulse" /> : <ArrowRight size={20} strokeWidth={3} />}</button>
                       </div>
                     )}
                   </div>
@@ -1268,27 +1023,12 @@ STRICT ROLEPLAY RULES:
           ))}
         </div>
       </div>
-
       <div className="bg-[#121212]/60 backdrop-blur-3xl border-t border-white/5 p-4 pb-10 z-20 flex-none">
         <div className="max-w-4xl mx-auto w-full flex items-end gap-3 bg-[#1a1a1a]/90 p-3 rounded-[2.5rem] border border-white/10 shadow-2xl ring-1 ring-white/5">
-          <textarea 
-            value={input} 
-            onChange={e => setInput(e.target.value)} 
-            placeholder={`Neural transmission...`} 
-            className="flex-1 bg-transparent border-none focus:outline-none text-white text-sm py-2 px-4 resize-none no-scrollbar font-medium placeholder:text-slate-700 leading-relaxed" 
-            rows={1} 
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} 
-          />
-          <button 
-            onClick={handleSend} 
-            disabled={!input.trim() || loading} 
-            className={`p-4 rounded-full transition-all flex-none ${input.trim() ? 'bg-primary text-white shadow-[0_0_20px_rgba(59,130,246,0.5)] active:scale-95' : 'bg-white/5 text-slate-800'}`}
-          >
-            <Check size={20} />
-          </button>
+          <textarea value={input} onChange={e => setInput(e.target.value)} placeholder={`Neural transmission...`} className="flex-1 bg-transparent border-none focus:outline-none text-white text-sm py-2 px-4 resize-none no-scrollbar font-medium placeholder:text-slate-700 leading-relaxed" rows={1} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} />
+          <button onClick={handleSend} disabled={!input.trim() || loading} className={`p-4 rounded-full transition-all flex-none ${input.trim() ? 'bg-primary text-white shadow-[0_0_20px_rgba(59,130,246,0.5)] active:scale-95' : 'bg-white/5 text-slate-800'}`}><Check size={20} /></button>
         </div>
       </div>
-
       {showChatMenu && (
         <div className="fixed inset-0 z-[110] flex items-start justify-end p-4 pt-20" onClick={() => setShowChatMenu(false)}>
             <div className="w-56 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
@@ -1299,16 +1039,10 @@ STRICT ROLEPLAY RULES:
             </div>
         </div>
       )}
-
       {showPersonaShift && (
         <div className="fixed inset-0 z-[120] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300">
            <div className="bg-[#1a1a1a] w-full max-w-sm rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
-              <div className="p-6 border-b border-white/5 flex items-center justify-between">
-                <h3 className="text-base font-black uppercase tracking-tighter text-white">Select Resonance</h3>
-                <button onClick={onCreatePersona} className="p-2 text-primary hover:bg-primary/10 rounded-full transition-all">
-                  <Plus size={18} strokeWidth={3} />
-                </button>
-              </div>
+              <div className="p-6 border-b border-white/5 flex items-center justify-between"><h3 className="text-base font-black uppercase tracking-tighter text-white">Select Resonance</h3><button onClick={onCreatePersona} className="p-2 text-primary hover:bg-primary/10 rounded-full transition-all"><Plus size={18} strokeWidth={3} /></button></div>
               <div className="max-h-[260px] overflow-y-auto p-3 space-y-2 no-scrollbar">
                 {personas.map((p: Persona) => (
                   <button key={p.id} onClick={() => { setActivePersonaId(p.id); setShowPersonaShift(false); }} className={`w-full p-4 rounded-xl text-left flex items-center justify-between transition-all ${activePersonaId === p.id ? 'bg-primary text-white shadow-lg' : 'bg-white/5 text-slate-500 hover:bg-white/10'}`}>
@@ -1316,18 +1050,99 @@ STRICT ROLEPLAY RULES:
                     {activePersonaId === p.id && <Check size={14} />}
                   </button>
                 ))}
-                <button 
-                  onClick={onCreatePersona}
-                  className="w-full p-4 rounded-xl text-primary border border-dashed border-primary/30 flex items-center justify-center gap-2 hover:bg-primary/5 transition-all"
-                >
-                  <PlusCircle size={16} />
-                  <span className="text-[10px] font-black uppercase tracking-widest">New Persona</span>
-                </button>
+                <button onClick={onCreatePersona} className="w-full p-4 rounded-xl text-primary border border-dashed border-primary/30 flex items-center justify-center gap-2 hover:bg-primary/5 transition-all"><PlusCircle size={16} /><span className="text-[10px] font-black uppercase tracking-widest">New Persona</span></button>
               </div>
               <div className="p-3 border-t border-white/5 text-center"><button onClick={() => setShowPersonaShift(false)} className="py-2 text-slate-600 font-black uppercase text-[9px]">Cancel</button></div>
            </div>
         </div>
       )}
+    </div>
+  );
+};
+
+const PersonaEditor = ({ initialData, onSave, onCancel, mode }: { initialData: Partial<Persona>, onSave: (data: Persona) => void, onCancel: () => void, mode: "create" | "edit" }) => {
+  const [name, setName] = useState(initialData.name || "");
+  const [bio, setBio] = useState(initialData.bio || "");
+  const [traitsStr, setTraitsStr] = useState((initialData.traits || []).join(", "));
+  const [mood, setMood] = useState(initialData.mood || "");
+  const [relationship, setRelationship] = useState(initialData.relationship || "");
+
+  const handleSave = () => {
+    const finalData: Persona = {
+      ...initialData,
+      id: initialData.id || 'new',
+      name,
+      bio,
+      traits: traitsStr.split(',').map(t => t.trim()).filter(Boolean),
+      mood,
+      relationship,
+      isPrivate: initialData.isPrivate ?? true,
+      avatarColor: initialData.avatarColor || 'bg-sky-600',
+    };
+    onSave(finalData);
+  };
+  
+  return (
+    <div className="fixed inset-0 z-[100] bg-[#0a0a0a] flex flex-col animate-in slide-in-from-right duration-300 overflow-hidden">
+      <div className="h-16 flex items-center justify-between px-4 border-b border-white/5 bg-[#121212] sticky top-0 z-30">
+        <div className="max-w-screen-xl mx-auto w-full flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button onClick={onCancel} className="text-slate-400 p-2 hover:bg-white/5 rounded-full transition-all active:scale-90"><ChevronLeft size={24} /></button>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black uppercase tracking-widest text-primary leading-none mb-1">{mode === 'create' ? 'Creating' : 'Editing'}</span>
+              <h2 className="text-lg font-black text-white uppercase tracking-tighter leading-none">{name || "New Persona"}</h2>
+            </div>
+          </div>
+          <button onClick={handleSave} className="bg-primary hover:bg-primary/90 text-white font-black text-[10px] uppercase tracking-[0.15em] px-6 py-2.5 rounded-full shadow-xl shadow-primary/20 active:scale-95 transition-all flex items-center gap-2">
+            <Check size={16} strokeWidth={3} /> Save
+          </button>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto no-scrollbar pb-24 bg-[#0a0a0a]">
+        <div className="max-w-xl mx-auto w-full p-4 md:p-8 space-y-8">
+          <div className="bg-[#121212] border border-white/5 rounded-[2.5rem] p-6 md:p-8 space-y-6 shadow-2xl">
+            <div>
+              <h3 className="text-base font-black text-white uppercase tracking-tighter flex items-center gap-2"><User size={18} className="text-primary"/> Identity</h3>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Core details of this persona</p>
+            </div>
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Name</label>
+                <input value={name} onChange={e => setName(e.target.value)} placeholder="E.g., 'The Detective', 'My Hero Academia OC'" className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 text-sm text-white font-bold outline-none focus:border-primary/50 transition-all" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Bio / Description</label>
+                <textarea value={bio} onChange={e => setBio(e.target.value)} placeholder="A brief description of who you are in this context." className="w-full bg-[#1a1a1a] border border-white/10 rounded-2xl p-4 text-[13px] text-white h-24 outline-none resize-none focus:border-primary/50 transition-all leading-relaxed placeholder:text-slate-700 font-medium" />
+              </div>
+            </div>
+          </div>
+          <div className="bg-[#121212] border border-white/5 rounded-[2.5rem] p-6 md:p-8 space-y-6 shadow-2xl">
+            <div>
+              <h3 className="text-base font-black text-white uppercase tracking-tighter flex items-center gap-2"><Atom size={18} className="text-amber-500"/> Psychological Profile</h3>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">How this persona thinks and feels</p>
+            </div>
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Key Traits (comma-separated)</label>
+                <input value={traitsStr} onChange={e => setTraitsStr(e.target.value)} placeholder="Brave, Sarcastic, Anxious, Scholarly..." className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 text-sm text-white font-medium outline-none focus:border-primary/50 transition-all" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Current Mood</label>
+                <input value={mood} onChange={e => setMood(e.target.value)} placeholder="Excited, Suspicious, Melancholy..." className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl p-4 text-sm text-white font-medium outline-none focus:border-primary/50 transition-all" />
+              </div>
+            </div>
+          </div>
+          <div className="bg-[#121212] border border-white/5 rounded-[2.5rem] p-6 md:p-8 space-y-6 shadow-2xl">
+            <div>
+              <h3 className="text-base font-black text-white uppercase tracking-tighter flex items-center gap-2"><Heart size={18} className="text-rose-500"/> Relationship Dynamics</h3>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Define your connection to the character</p>
+            </div>
+            <div className="space-y-1.5">
+              <textarea value={relationship} onChange={e => setRelationship(e.target.value)} placeholder="Describe the relationship. E.g., 'Childhood friends who grew apart', 'Rival detectives competing on a case', 'A new recruit reporting to a commander'." className="w-full bg-[#1a1a1a] border border-white/10 rounded-2xl p-4 text-[13px] text-white h-32 outline-none resize-none focus:border-primary/50 transition-all leading-relaxed placeholder:text-slate-700 font-medium" />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
