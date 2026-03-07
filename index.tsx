@@ -616,9 +616,10 @@ const CreateView = ({ onCreateCharacter, onBack, initialMode, userProfile, onAdd
     vibrate(25);
     setIsGenerating(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
+      const ai = new GoogleGenAI({ apiKey: apiKey as string });
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-flash-latest",
         contents: "Generate 100 extremely diverse and unique character profiles for a chat app. Return them strictly as a JSON array of objects with these fields: name, tagline, subtitle, description, greeting, systemInstruction, color (Tailwind bg- color), maturityLevel (everyone, teen, mature, unrestricted), and tags (array). Ensure characters are high-quality and cinematic.",
         config: {
           responseMimeType: "application/json",
@@ -707,10 +708,11 @@ const CharacterEditor = ({ initialData, onSave, onCancel, mode, userProfile, per
     setIsGeneratingGreeting(true);
     try {
       const activePersona = personas.find(p => p.id === activePersonaId);
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
+      const ai = new GoogleGenAI({ apiKey: apiKey as string });
       const prompt = `Craft a cinematic, immersive opening greeting for a character named ${name}. Vibe: ${vibe}. Identity: ${tagline}. Context: This greeting is directed at a user persona named {{user}} (${activePersona?.bio || "unspecified identity"}). Directives: ${systemInstruction}. Requirements: - Use first-person dialogue. - Describe actions in *asterisks*. - Use {{user}} to refer to the person the character is talking to. - Return ONLY the greeting text with {{user}} included.`;
       const response = await ai.models.generateContent({ 
-        model: "gemini-3-flash-preview", 
+        model: "gemini-flash-latest", 
         contents: prompt, 
         config: { temperature: 1.0 } 
       });
@@ -957,10 +959,11 @@ ${isNeuralEngine ? "- FORMATTING: Every character turn MUST start with **[Charac
     const msgIndex = session.messages.findIndex((m:any) => m.id === msgId);
     const contents = formatHistoryForGemini(session.messages.slice(0, msgIndex));
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
+      const ai = new GoogleGenAI({ apiKey: apiKey as string });
       const persona = currentPersona;
       const stream = await ai.models.generateContentStream({ 
-        model: "gemini-3-flash-preview", 
+        model: "gemini-flash-latest", 
         contents: contents,
         config: { 
           systemInstruction: getEnhancedSystemPrompt(character, persona), 
@@ -993,10 +996,11 @@ ${isNeuralEngine ? "- FORMATTING: Every character turn MUST start with **[Charac
     setInput("");
     setLoading(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
+      const ai = new GoogleGenAI({ apiKey: apiKey as string });
       const persona = currentPersona;
       const stream = await ai.models.generateContentStream({ 
-        model: "gemini-3-flash-preview", 
+        model: "gemini-flash-latest", 
         contents: contents,
         config: { 
           systemInstruction: getEnhancedSystemPrompt(character, persona), 
