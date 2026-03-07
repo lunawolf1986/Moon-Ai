@@ -366,10 +366,10 @@ const App = () => {
   useEffect(() => { localStorage.setItem('pf_user_profile', JSON.stringify(userProfile)); }, [userProfile]);
   useEffect(() => { if (appToast) { const timer = setTimeout(() => setAppToast(null), 2500); return () => clearTimeout(timer); } }, [appToast]);
   
-  const startChat = (charId: string) => {
+  const startChat = (charId: string, forceNew: boolean = false) => {
     vibrate();
     const existing = chats.find(c => c.characterId === charId);
-    if (existing) {
+    if (existing && !forceNew) {
       setActiveChatId(existing.id);
     } else {
       const newChat: ChatSession = {
@@ -445,6 +445,7 @@ const App = () => {
             }}
             onUpdateCharacter={(updates: Partial<Character>) => { setCharacters(prev => prev.map(c => c.id === character.id ? { ...c, ...updates } : c)); }}
             onDeleteChat={(id: string) => { setChats(prev => prev.filter(c => c.id !== id)); setActiveChatId(null); }}
+            onNewChat={() => startChat(character.id, true)}
             onCreatePersona={() => setEditingPersonaId('new')}
           />
         );
@@ -898,7 +899,7 @@ const SettingsView = ({ onClearData, userProfile, setAppToast, onInstall, isInst
   </div>
 );
 
-const ChatInterface = ({ session, character, personas, activePersonaId, setActivePersonaId, onBack, onUpdateSession, onUpdateCharacter, userProfile, setAppToast, onCreatePersona }: any) => {
+const ChatInterface = ({ session, character, personas, activePersonaId, setActivePersonaId, onBack, onUpdateSession, onUpdateCharacter, onNewChat, userProfile, setAppToast, onCreatePersona }: any) => {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1096,6 +1097,7 @@ ${isNeuralEngine ? "- FORMATTING: Every character turn MUST start with **[Charac
       {showChatMenu && (
         <div className="fixed inset-0 z-[110] flex items-start justify-end p-4 pt-20" onClick={() => setShowChatMenu(false)}>
             <div className="w-56 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                <button onClick={() => { onNewChat(); setShowChatMenu(false); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-white"><Plus size={16} /> Start New Chat</button>
                 <button onClick={() => { setShowCoreEdit(true); setShowChatMenu(false); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-emerald-500"><Wand2 size={16} /> Edit Core Directives</button>
                 <button onClick={() => { setShowPersonaShift(true); setShowChatMenu(false); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-primary"><UserPlus size={16} /> Shift Persona</button>
                 <button onClick={() => { handleDownloadChat(character, session, currentPersona); setShowChatMenu(false); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-amber-500"><Download size={16} /> Export Dialogue</button>
