@@ -1,21 +1,21 @@
 
 {
-  "name": "PersonaFlow",
-  "short_name": "PersonaFlow",
-  "description": "Mobile-first, unrestricted character chat and roleplay.",
+  "name": "Moonai",
+  "short_name": "Moonai",
+  "description": "The Moonai Neural Engine: A multi-agent conductor managing a Daily Cluster of AI entities for deep, multi-persona roleplay.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#020617",
   "theme_color": "#3B82F6",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/2593/2593635.png",
+      "src": "https://cdn-icons-png.flaticon.com/512/1829/1829191.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/2593/2593635.png",
+      "src": "https://cdn-icons-png.flaticon.com/512/1829/1829191.png",
       "sizes": "512x512",
       "type": "image/png"
     }

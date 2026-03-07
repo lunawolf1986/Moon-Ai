@@ -467,9 +467,9 @@ const App = () => {
         </div>
       )}
       {!activeChatId && !isEditorActive && (
-        <div className="h-16 flex-none bg-[#1a1a1a]/90 backdrop-blur-md border-t border-white/5 z-50">
+        <div className="flex-none bg-[#1a1a1a]/95 backdrop-blur-xl border-t border-white/5 z-50 pt-1 pb-6 md:pb-1">
           <div className="max-w-screen-xl mx-auto h-full flex items-center justify-center">
-            <div className="flex items-center h-full overflow-x-auto no-scrollbar px-4 space-x-0.5 md:space-x-4">
+            <div className="flex items-center h-full overflow-x-auto no-scrollbar px-4 space-x-1 md:space-x-4">
               <NavItem id="for_you" label="For You" icon={Sparkles} active={activeTab} set={handleNav} />
               <NavItem id="featured" label="Featured" icon={Star} active={activeTab} set={handleNav} />
               <NavItem id="explore" label="Explore" icon={Compass} active={activeTab} set={handleNav} />
@@ -495,7 +495,7 @@ const NavItem = ({ id, label, icon: Icon, active, set }: any) => (
 );
 
 const ForYouView = ({ characters, onStartChat, onCustomize }: any) => (
-  <div className="p-4 pb-20 space-y-6">
+  <div className="p-4 pb-28 space-y-6">
     <header className="mt-2 mb-1">
       <h1 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-br from-blue-300 via-white to-blue-300 tracking-tighter">Neural Harvest</h1>
       <p className="text-slate-500 font-bold text-[9px] uppercase tracking-widest mt-1 opacity-60 italic">Displaying top manifestations</p>
@@ -510,7 +510,7 @@ const ForYouView = ({ characters, onStartChat, onCustomize }: any) => (
 );
 
 const FeaturedView = ({ characters, onStartChat, onCustomize }: any) => (
-  <div className="p-4 pb-20">
+  <div className="p-4 pb-28">
     <h1 className="text-2xl font-black mb-6 uppercase tracking-tighter text-white">Verified Archetypes</h1>
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
       {characters.slice(0, 100).map((c: Character) => <CharacterCard key={c.id} character={c} onStartChat={onStartChat} onCustomize={onCustomize} />)}
@@ -522,7 +522,7 @@ const ExploreView = ({ characters, onStartChat, onCustomize }: any) => {
   const [search, setSearch] = useState("");
   const filtered = characters.filter((c: Character) => (search === "" || c.name.toLowerCase().includes(search.toLowerCase()) || c.tags.some(t => t.toLowerCase().includes(search.toLowerCase()))));
   return (
-    <div className="p-4 pb-20">
+    <div className="p-4 pb-28">
       <div className="relative mb-6 max-w-2xl mx-auto">
         <Search className="absolute left-3.5 top-3.5 text-slate-600" size={16} />
         <input type="text" placeholder="Search identities..." className="w-full bg-[#1a1a1a] border border-white/5 rounded-2xl py-3 pl-10 pr-4 text-white text-sm font-bold focus:outline-none focus:border-primary/50 transition-all placeholder:text-slate-600 shadow-inner" value={search} onChange={e => setSearch(e.target.value)} />
@@ -770,7 +770,7 @@ const CharacterEditor = ({ initialData, onSave, onCancel, mode, userProfile, per
 };
 
 const LibraryView = ({ characters, userProfile, onEditCharacter }: any) => (
-  <div className="p-4 pb-20">
+  <div className="p-4 pb-32">
     <h1 className="text-2xl font-black mb-6 uppercase tracking-tighter">Identity Archive</h1>
     <div className="space-y-8">
       <section>
@@ -793,7 +793,7 @@ const LibraryView = ({ characters, userProfile, onEditCharacter }: any) => (
 
 const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfile, onEditPersona, onDeletePersona }: any) => {
   return (
-    <div className="p-4 max-w-lg mx-auto w-full pb-24">
+    <div className="p-4 max-w-lg mx-auto w-full pb-32">
       <div className="flex flex-col items-center mb-8"><div className="w-20 h-20 bg-primary rounded-[1.8rem] flex items-center justify-center text-3xl font-black mb-3 shadow-2xl shadow-primary/30">{userProfile.avatarInitial}</div><h1 className="text-2xl font-black tracking-tighter text-white">{userProfile.name}</h1><div className="text-slate-600 font-bold uppercase tracking-widest text-[9px] mt-0.5">{userProfile.handle}</div></div>
       <div className="flex items-center justify-between mb-4 px-2"><h2 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Personas</h2><button onClick={() => onEditPersona('new')} className="p-2 bg-primary/10 text-primary hover:bg-primary hover:text-white rounded-full transition-all active:scale-90"><Plus size={16} strokeWidth={3} /></button></div>
       <div className="space-y-3">
@@ -820,7 +820,7 @@ const ProfileView = ({ personas, activePersonaId, setActivePersonaId, userProfil
 };
 
 const SettingsView = ({ onClearData, userProfile, setAppToast }: any) => (
-  <div className="p-4 max-w-lg mx-auto w-full pb-24">
+  <div className="p-4 max-w-lg mx-auto w-full pb-32">
     <h1 className="text-2xl font-black mb-6 uppercase tracking-tighter text-white">Core Settings</h1>
     <div className="bg-[#1a1a1a] rounded-[2.5rem] overflow-hidden border border-white/5 p-6 space-y-6 shadow-2xl">
       <section className="space-y-4">
@@ -845,6 +845,8 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showChatMenu, setShowChatMenu] = useState(false);
   const [showPersonaShift, setShowPersonaShift] = useState(false);
+  const [showCoreEdit, setShowCoreEdit] = useState(false);
+  const [editedCore, setEditedCore] = useState({ systemInstruction: character.systemInstruction, greeting: character.greeting || "" });
   const characterHex = useMemo(() => getHexFromBgClass(character.color), [character.color]);
   const currentPersona = useMemo(() => personas.find((p: Persona) => p.id === activePersonaId) || personas[0], [personas, activePersonaId]);
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [session.messages, loading]);
@@ -1032,6 +1034,7 @@ ${isNeuralEngine ? "- FORMATTING: Every character turn MUST start with **[Charac
       {showChatMenu && (
         <div className="fixed inset-0 z-[110] flex items-start justify-end p-4 pt-20" onClick={() => setShowChatMenu(false)}>
             <div className="w-56 bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                <button onClick={() => { setShowCoreEdit(true); setShowChatMenu(false); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-emerald-500"><Wand2 size={16} /> Edit Core Directives</button>
                 <button onClick={() => { setShowPersonaShift(true); setShowChatMenu(false); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-primary"><UserPlus size={16} /> Shift Persona</button>
                 <button onClick={() => { handleDownloadChat(character, session, currentPersona); setShowChatMenu(false); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-amber-500"><Download size={16} /> Export Dialogue</button>
                 <button onClick={() => { handleShareApp(setAppToast); setShowChatMenu(false); }} className="w-full text-left px-5 py-4 hover:bg-white/5 flex items-center gap-3 text-[10px] font-black uppercase border-b border-white/5 text-slate-400"><Share2 size={16} /> Share App</button>
@@ -1053,6 +1056,53 @@ ${isNeuralEngine ? "- FORMATTING: Every character turn MUST start with **[Charac
                 <button onClick={onCreatePersona} className="w-full p-4 rounded-xl text-primary border border-dashed border-primary/30 flex items-center justify-center gap-2 hover:bg-primary/5 transition-all"><PlusCircle size={16} /><span className="text-[10px] font-black uppercase tracking-widest">New Persona</span></button>
               </div>
               <div className="p-3 border-t border-white/5 text-center"><button onClick={() => setShowPersonaShift(false)} className="py-2 text-slate-600 font-black uppercase text-[9px]">Cancel</button></div>
+           </div>
+        </div>
+      )}
+      {showCoreEdit && (
+        <div className="fixed inset-0 z-[130] bg-black/95 backdrop-blur-2xl flex items-center justify-center p-6 animate-in fade-in duration-300">
+           <div className="bg-[#1a1a1a] w-full max-w-lg rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+              <div className="p-6 border-b border-white/5 flex items-center justify-between bg-emerald-500/5">
+                <div>
+                  <h3 className="text-base font-black uppercase tracking-tighter text-white flex items-center gap-2"><Wand2 size={18} className="text-emerald-500" /> Core Directives</h3>
+                  <p className="text-[8px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Iterate on the identity's neural foundation</p>
+                </div>
+                <button onClick={() => setShowCoreEdit(false)} className="p-2 text-slate-500 hover:text-white transition-all"><X size={20} /></button>
+              </div>
+              <div className="p-6 overflow-y-auto space-y-6 no-scrollbar flex-1">
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">System Instruction</label>
+                  <textarea 
+                    value={editedCore.systemInstruction} 
+                    onChange={e => setEditedCore(prev => ({ ...prev, systemInstruction: e.target.value }))}
+                    placeholder="Define the identity's logic, tone, and boundaries..."
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-white font-medium focus:outline-none focus:border-emerald-500/50 transition-all min-h-[200px] resize-none leading-relaxed"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Initial Greeting</label>
+                  <textarea 
+                    value={editedCore.greeting} 
+                    onChange={e => setEditedCore(prev => ({ ...prev, greeting: e.target.value }))}
+                    placeholder="How does the identity initiate the link?"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-white font-medium focus:outline-none focus:border-emerald-500/50 transition-all min-h-[120px] resize-none leading-relaxed"
+                  />
+                </div>
+              </div>
+              <div className="p-6 bg-white/5 flex gap-3">
+                <button onClick={() => setShowCoreEdit(false)} className="flex-1 py-4 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-colors">Cancel</button>
+                <button 
+                  onClick={() => { 
+                    onUpdateCharacter({ systemInstruction: editedCore.systemInstruction, greeting: editedCore.greeting }); 
+                    setShowCoreEdit(false);
+                    setAppToast("Neural Core Updated");
+                    vibrate(30);
+                  }} 
+                  className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-900/20 active:scale-95 transition-all"
+                >
+                  Apply Changes
+                </button>
+              </div>
            </div>
         </div>
       )}
