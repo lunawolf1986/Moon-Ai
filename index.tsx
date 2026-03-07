@@ -315,7 +315,19 @@ const App = () => {
     return saved ? JSON.parse(saved) : [];
   });
   const [appToast, setAppToast] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleOnline = () => { setIsOnline(true); setAppToast("Neural Link Restored"); vibrate(50); };
+    const handleOffline = () => { setIsOnline(false); setAppToast("Neural Link Severed (Offline)"); vibrate(100); };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
   const [activePersonaId, setActivePersonaId] = useState<string>("p_default");
   const [createViewMode, setCreateViewMode] = useState<"character" | "persona">("character");
   const [editingCharacterId, setEditingCharacterId] = useState<string | null>(null);
@@ -467,7 +479,7 @@ const App = () => {
         </div>
       )}
       {!activeChatId && !isEditorActive && (
-        <div className="flex-none bg-[#1a1a1a]/95 backdrop-blur-xl border-t border-white/5 z-50 pt-1 pb-6 md:pb-1">
+        <div className="flex-none bg-[#1a1a1a]/95 backdrop-blur-xl border-t border-white/5 z-50 pt-1 pb-[calc(1.5rem+env(safe-area-inset-bottom))] md:pb-1">
           <div className="max-w-screen-xl mx-auto h-full flex items-center justify-center">
             <div className="flex items-center h-full overflow-x-auto no-scrollbar px-4 space-x-1 md:space-x-4">
               <NavItem id="for_you" label="For You" icon={Sparkles} active={activeTab} set={handleNav} />
@@ -496,9 +508,17 @@ const NavItem = ({ id, label, icon: Icon, active, set }: any) => (
 
 const ForYouView = ({ characters, onStartChat, onCustomize }: any) => (
   <div className="p-4 pb-28 space-y-6">
-    <header className="mt-2 mb-1">
-      <h1 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-br from-blue-300 via-white to-blue-300 tracking-tighter">Neural Harvest</h1>
-      <p className="text-slate-500 font-bold text-[9px] uppercase tracking-widest mt-1 opacity-60 italic">Displaying top manifestations</p>
+    <header className="mt-2 mb-1 flex items-center justify-between">
+      <div>
+        <h1 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-br from-blue-300 via-white to-blue-300 tracking-tighter">Neural Harvest</h1>
+        <p className="text-slate-500 font-bold text-[9px] uppercase tracking-widest mt-1 opacity-60 italic">Displaying top manifestations</p>
+      </div>
+      {!navigator.onLine && (
+        <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full text-amber-500 animate-pulse">
+          <Ghost size={12} />
+          <span className="text-[8px] font-black uppercase tracking-widest">Offline Mode</span>
+        </div>
+      )}
     </header>
     <section>
       <h2 className="text-[10px] font-black text-primary uppercase tracking-[0.2em] mb-3 px-1 flex items-center gap-1.5"><Zap size={12} className="fill-primary" /> Daily Cluster</h2>
@@ -924,6 +944,7 @@ ${isNeuralEngine ? "- FORMATTING: Every character turn MUST start with **[Charac
   };
   const handleSend = async () => {
     if (!input.trim() || loading) return;
+    if (!navigator.onLine) { setAppToast?.("Neural Link Failed: Offline"); vibrate(100); return; }
     vibrate();
     const userMsgId = generateId("msg_u_");
     const modelMsgId = generateId("msg_m_");
@@ -985,13 +1006,13 @@ ${isNeuralEngine ? "- FORMATTING: Every character turn MUST start with **[Charac
           <div className="flex items-center gap-3">
             <button onClick={onBack} className="p-1 text-slate-500 hover:text-white transition-colors"><ChevronLeft size={24} /></button>
             <div className="relative"><AbstractAvatar name={character.name} colorClass={character.color} seed={character.seed} size="md" initial={character.initial} /><div className="absolute inset-0 rounded-full animate-ping opacity-30" style={{ boxShadow: `0 0 20px 2px ${characterHex}` }} /></div>
-            <div><div className="font-black text-white uppercase text-sm tracking-tighter flex items-center gap-1.5">{character.name} <button onClick={() => setShowChatMenu(!showChatMenu)}><MoreVertical size={14} className="text-slate-700" /></button></div><div className="text-[8px] text-primary font-black uppercase tracking-widest">{loading ? 'Synthesizing...' : 'Direct Link'}</div></div>
+    <div><div className="font-black text-white uppercase text-sm tracking-tighter flex items-center gap-1.5">{character.name} <button onClick={() => setShowChatMenu(!showChatMenu)}><MoreVertical size={14} className="text-slate-700" /></button></div><div className="text-[8px] text-primary font-black uppercase tracking-widest">{loading ? 'Synthesizing...' : !navigator.onLine ? 'Neural Link Severed' : 'Direct Link'}</div></div>
           </div>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-10 no-scrollbar pb-24 z-10" ref={scrollRef}>
         <div className="max-w-4xl mx-auto w-full space-y-12">
-          {character.greeting && session.messages.length === 0 && (
+          {character.greeting && (
              <div className="flex justify-start animate-in fade-in duration-700">
                <div className="flex max-w-[92%] gap-3 items-start md:max-w-[80%]">
                  <AbstractAvatar name={character.name} colorClass={character.color} seed={character.seed} size="sm" initial={character.initial} className="mt-1" />
@@ -1199,3 +1220,9 @@ const PersonaEditor = ({ initialData, onSave, onCancel, mode }: { initialData: P
 
 const root = createRoot(document.getElementById("root")!);
 root.render(<App />);
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW registration failed: ', err));
+  });
+}
