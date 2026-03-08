@@ -459,6 +459,7 @@ const App = () => {
            mode="edit" 
            initialData={char} 
            userProfile={userProfile} 
+           setAppToast={setAppToast}
            onSave={(data) => {
              setCharacters(prev => prev.map(c => c.id === editingCharacterId ? { ...c, ...data, creator: userProfile.handle } : c));
              setEditingCharacterId(null);
@@ -475,7 +476,7 @@ const App = () => {
       case "featured": return <FeaturedView characters={characters} onStartChat={startChat} onCustomize={setEditingCharacterId} />;
       case "explore": return <ExploreView characters={characters} onStartChat={startChat} onCustomize={setEditingCharacterId} />;
       case "chat": return <ChatListView chats={chats} characters={characters} onOpenChat={setActiveChatId} onDeleteChat={(id: string) => setChats(chats.filter(c => c.id !== id))} />;
-      case "create": return <CreateView initialMode={createViewMode} userProfile={userProfile} onAddCharacters={(newChars: Character[]) => setCharacters([...newChars, ...characters])} onCreateCharacter={(c: any) => { setCharacters([c, ...characters]); setAppToast("Identity Manifested"); setActiveTab("library"); }} onBack={() => setActiveTab('for_you')} />;
+      case "create": return <CreateView initialMode={createViewMode} userProfile={userProfile} setAppToast={setAppToast} onAddCharacters={(newChars: Character[]) => setCharacters([...newChars, ...characters])} onCreateCharacter={(c: any) => { setCharacters([c, ...characters]); setAppToast("Identity Manifested"); setActiveTab("library"); }} onBack={() => setActiveTab('for_you')} />;
       case "library": return <LibraryView characters={characters} personas={personas} userProfile={userProfile} onEditCharacter={(c: Character) => setEditingCharacterId(c.id)} />;
       case "profile": return <ProfileView personas={personas} activePersonaId={activePersonaId} setActivePersonaId={(id: string) => { setActivePersonaId(id); const p = personas.find(pers => pers.id === id); if (p) setAppToast(`Manifested: ${p.name}`); }} chats={chats} onEditPersona={setEditingPersonaId} userProfile={userProfile} setUserProfile={setUserProfile} onDeletePersona={(id: string) => setPersonas(personas.filter(p => p.id !== id))} />;
       case "settings": return <SettingsView onClearData={clearAllData} userProfile={userProfile} setAppToast={setAppToast} onInstall={handleInstall} isInstallable={!!deferredPrompt} />;
@@ -610,7 +611,7 @@ const ChatListView = ({ chats, characters, onOpenChat, onDeleteChat }: any) => {
   );
 };
 
-const CreateView = ({ onCreateCharacter, onBack, initialMode, userProfile, onAddCharacters }: any) => {
+const CreateView = ({ onCreateCharacter, onBack, initialMode, userProfile, onAddCharacters, setAppToast }: any) => {
   const [mode, setMode] = useState<"character" | "generate">(initialMode === "character" ? "character" : "generate");
   const [isGenerating, setIsGenerating] = useState(false);
   const neuralHarvest = async () => {
@@ -669,7 +670,18 @@ const CreateView = ({ onCreateCharacter, onBack, initialMode, userProfile, onAdd
       </div>
       <div className="flex-1 overflow-y-auto no-scrollbar">
         {mode === 'character' ? (
-          <CharacterEditor personas={[]} activePersonaId="" mode="create" userProfile={userProfile} initialData={{ creator: userProfile.handle }} onCancel={onBack} onSave={(data: any) => onCreateCharacter({ id: generateId("char_"), initial: data.name![0].toUpperCase(), color: 'bg-indigo-600', creator: userProfile.handle, engagement: "0", tags: [], ...data })} />
+          <CharacterEditor personas={[]} activePersonaId="" mode="create" userProfile={userProfile} initialData={{ creator: userProfile.handle }} onCancel={onBack} onSave={(data: any) => {
+            if (!data.name) return;
+            onCreateCharacter({ 
+              id: generateId("char_"), 
+              initial: data.name[0].toUpperCase(), 
+              color: 'bg-indigo-600', 
+              creator: userProfile.handle, 
+              engagement: "0", 
+              tags: [], 
+              ...data 
+            });
+          }} />
         ) : (
           <div className="px-4 text-center space-y-6 pt-10 pb-20 max-w-xl mx-auto">
             <div className="w-20 h-20 bg-purple-600/20 text-purple-500 rounded-full flex items-center justify-center mx-auto animate-pulse"><Layers size={40}/></div>
@@ -688,7 +700,7 @@ const CreateView = ({ onCreateCharacter, onBack, initialMode, userProfile, onAdd
   );
 };
 
-const CharacterEditor = ({ initialData, onSave, onCancel, mode, userProfile, personas, activePersonaId }: { initialData: Partial<Character>, onSave: (data: Partial<Character>) => void, onCancel: () => void, mode: "create" | "edit", userProfile: UserProfile, personas: Persona[], activePersonaId: string }) => {
+const CharacterEditor = ({ initialData, onSave, onCancel, mode, userProfile, personas, activePersonaId, setAppToast }: { initialData: Partial<Character>, onSave: (data: Partial<Character>) => void, onCancel: () => void, mode: "create" | "edit", userProfile: UserProfile, personas: Persona[], activePersonaId: string, setAppToast?: (m: string) => void }) => {
   const [name, setName] = useState(initialData.name || "");
   const [tagline, setTagline] = useState(initialData.tagline || "");
   const [subtitle, setSubtitle] = useState(initialData.subtitle || "");
@@ -731,7 +743,23 @@ const CharacterEditor = ({ initialData, onSave, onCancel, mode, userProfile, per
               <h2 className="text-lg font-black text-white uppercase tracking-tighter leading-none">{name || "New Character"}</h2>
             </div>
           </div>
-          <button onClick={() => { vibrate(); onSave({ name, tagline, subtitle, description, greeting, systemInstruction, visibility, seed, color, maturityLevel }); }} className="bg-primary hover:bg-primary/90 text-white font-black text-[10px] uppercase tracking-[0.15em] px-6 py-2.5 rounded-full shadow-xl shadow-primary/20 active:scale-95 transition-all flex items-center gap-2">
+          <button onClick={() => { 
+            if (!name.trim()) { setAppToast?.("Identity requires a name"); return; }
+            vibrate(); 
+            onSave({ 
+              name, 
+              tagline, 
+              subtitle, 
+              description, 
+              greeting, 
+              systemInstruction, 
+              visibility, 
+              seed, 
+              color, 
+              maturityLevel,
+              initial: name[0].toUpperCase()
+            }); 
+          }} className="bg-primary hover:bg-primary/90 text-white font-black text-[10px] uppercase tracking-[0.15em] px-6 py-2.5 rounded-full shadow-xl shadow-primary/20 active:scale-95 transition-all flex items-center gap-2">
             <Check size={16} strokeWidth={3} /> {isDefaultChar ? 'Save as Own' : 'Save'}
           </button>
         </div>
@@ -903,12 +931,77 @@ const ChatInterface = ({ session, character, personas, activePersonaId, setActiv
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const socketRef = useRef<WebSocket | null>(null);
   const [showChatMenu, setShowChatMenu] = useState(false);
   const [showPersonaShift, setShowPersonaShift] = useState(false);
   const [showCoreEdit, setShowCoreEdit] = useState(false);
   const [editedCore, setEditedCore] = useState({ systemInstruction: character.systemInstruction, greeting: character.greeting || "" });
+  
+  // Sync editedCore when character changes or modal opens
+  useEffect(() => {
+    if (showCoreEdit) {
+      setEditedCore({ 
+        systemInstruction: character.systemInstruction, 
+        greeting: character.greeting || "" 
+      });
+    }
+  }, [showCoreEdit, character.systemInstruction, character.greeting]);
+
   const characterHex = useMemo(() => getHexFromBgClass(character.color), [character.color]);
   const currentPersona = useMemo(() => personas.find((p: Persona) => p.id === activePersonaId) || personas[0], [personas, activePersonaId]);
+
+  const [socketStatus, setSocketStatus] = useState<'connecting' | 'open' | 'closed'>('connecting');
+
+  useEffect(() => {
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const socket = new WebSocket(`${protocol}//${window.location.host}`);
+    socketRef.current = socket;
+
+    socket.onopen = () => {
+      setSocketStatus('open');
+      socket.send(JSON.stringify({ type: "join", roomId: session.id }));
+    };
+
+    socket.onclose = () => {
+      setSocketStatus('closed');
+    };
+
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === "user_message") {
+        // User message already added locally, but this handles sync across tabs
+        onUpdateSession((prev: ChatSession) => {
+          if (prev.messages.some(m => m.id === data.message.id)) return prev;
+          return { ...prev, messages: [...prev.messages, data.message] };
+        });
+      } else if (data.type === "model_chunk") {
+        setLoading(true);
+        onUpdateSession((prev: ChatSession) => {
+          const exists = prev.messages.find(m => m.id === data.messageId);
+          if (exists) {
+            return { ...prev, messages: prev.messages.map(m => m.id === data.messageId ? { ...m, text: data.text } : m) };
+          } else {
+            const newMsg: Message = { id: data.messageId, role: "model", text: data.text, timestamp: Date.now(), isGenerating: true, versions: [], currentVersionIndex: 0 };
+            return { ...prev, messages: [...prev.messages, newMsg] };
+          }
+        });
+      } else if (data.type === "model_complete") {
+        setLoading(false);
+        onUpdateSession((prev: ChatSession) => ({
+          ...prev,
+          messages: prev.messages.map(m => m.id === data.messageId ? { ...m, text: data.text, isGenerating: false, versions: [data.text], currentVersionIndex: 0 } : m)
+        }));
+      } else if (data.type === "error") {
+        setAppToast?.(data.message);
+        setLoading(false);
+      }
+    };
+
+    return () => {
+      socket.close();
+    };
+  }, [session.id]);
+
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [session.messages, loading]);
   const getEnhancedSystemPrompt = (char: Character, persona: Persona) => {
     const isNeuralEngine = char.id === 'char_neural_engine';
@@ -993,48 +1086,67 @@ ${isNeuralEngine ? "- FORMATTING: Every character turn MUST start with **[Charac
     if (!input.trim() || loading) return;
     if (!navigator.onLine) { setAppToast?.("Neural Link Failed: Offline"); vibrate(100); return; }
     vibrate();
+    
     const userMsgId = generateId("msg_u_");
-    const modelMsgId = generateId("msg_m_");
     const userMsg: Message = { id: userMsgId, role: "user", text: input.trim(), personaId: activePersonaId, timestamp: Date.now() };
-    const modelMsg: Message = { id: modelMsgId, role: "model", text: "", timestamp: Date.now(), isGenerating: true, versions: [], currentVersionIndex: 0 };
-    const updatedMessages = [...session.messages, userMsg, modelMsg];
-    onUpdateSession((prev: ChatSession) => ({ ...prev, messages: updatedMessages, lastActive: Date.now() }));
-    const contents = formatHistoryForGemini(updatedMessages.filter(m => !m.isGenerating));
-    setInput("");
-    setLoading(true);
-    try {
-      const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
-      console.log("Neural Link Status:", apiKey ? `Key detected (starts with ${apiKey.substring(0, 4)}...)` : "Key missing");
-      if (!apiKey) {
-        setAppToast?.("Neural Link Failed: API Key Missing. Check Vercel Environment Variables.");
-        setLoading(false);
-        return;
-      }
-      const ai = new GoogleGenAI({ apiKey: apiKey as string });
-      const persona = currentPersona;
-      const stream = await ai.models.generateContentStream({ 
-        model: "gemini-3-flash-preview", 
-        contents: contents,
-        config: { 
-          systemInstruction: getEnhancedSystemPrompt(character, persona), 
-          temperature: 1.0,
-          safetySettings: [
-            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          ],
+    
+    // Optimistic update
+    onUpdateSession((prev: ChatSession) => ({ ...prev, messages: [...prev.messages, userMsg], lastActive: Date.now() }));
+    
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({
+        type: "chat",
+        roomId: session.id,
+        userMessage: userMsg,
+        character,
+        persona: currentPersona,
+        history: formatHistoryForGemini(session.messages)
+      }));
+      setInput("");
+      setLoading(true);
+    } else {
+      // Fallback to direct API if socket is down
+      const modelMsgId = generateId("msg_m_");
+      const modelMsg: Message = { id: modelMsgId, role: "model", text: "", timestamp: Date.now(), isGenerating: true, versions: [], currentVersionIndex: 0 };
+      const updatedMessages = [...session.messages, userMsg, modelMsg];
+      onUpdateSession((prev: ChatSession) => ({ ...prev, messages: updatedMessages, lastActive: Date.now() }));
+      const contents = formatHistoryForGemini(updatedMessages.filter(m => !m.isGenerating));
+      setInput("");
+      setLoading(true);
+      try {
+        const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
+        console.log("Neural Link Status:", apiKey ? `Key detected (starts with ${apiKey.substring(0, 4)}...)` : "Key missing");
+        if (!apiKey) {
+          setAppToast?.("Neural Link Failed: API Key Missing. Check Vercel Environment Variables.");
+          setLoading(false);
+          return;
         }
-      });
-      let fullText = "";
-      for await (const chunk of stream) { 
-        if (chunk.text) { 
-          fullText += chunk.text; 
-          onUpdateSession((prev: ChatSession) => ({ ...prev, messages: prev.messages.map(m => m.id === modelMsgId ? { ...m, text: fullText } : m) }));
-        } 
-      }
-      onUpdateSession((prev: ChatSession) => ({ ...prev, messages: prev.messages.map(m => m.id === modelMsgId ? { ...m, text: fullText, isGenerating: false, versions: [fullText], currentVersionIndex: 0 } : m) }));
-    } catch (e) { console.error(e); setAppToast?.("Neural Link Failed."); } finally { setLoading(false); }
+        const ai = new GoogleGenAI({ apiKey: apiKey as string });
+        const persona = currentPersona;
+        const stream = await ai.models.generateContentStream({ 
+          model: "gemini-3-flash-preview", 
+          contents: contents,
+          config: { 
+            systemInstruction: getEnhancedSystemPrompt(character, persona), 
+            temperature: 1.0,
+            safetySettings: [
+              { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+              { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+              { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+              { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            ],
+          }
+        });
+        let fullText = "";
+        for await (const chunk of stream) { 
+          if (chunk.text) { 
+            fullText += chunk.text; 
+            onUpdateSession((prev: ChatSession) => ({ ...prev, messages: prev.messages.map(m => m.id === modelMsgId ? { ...m, text: fullText } : m) }));
+          } 
+        }
+        onUpdateSession((prev: ChatSession) => ({ ...prev, messages: prev.messages.map(m => m.id === modelMsgId ? { ...m, text: fullText, isGenerating: false, versions: [fullText], currentVersionIndex: 0 } : m) }));
+      } catch (e) { console.error(e); setAppToast?.("Neural Link Failed."); } finally { setLoading(false); }
+    }
   };
   const switchVersion = (msgId: string, direction: 'prev' | 'next') => {
     const msg = session.messages.find((m:any) => m.id === msgId);
@@ -1060,7 +1172,7 @@ ${isNeuralEngine ? "- FORMATTING: Every character turn MUST start with **[Charac
           <div className="flex items-center gap-3">
             <button onClick={onBack} className="p-1 text-slate-500 hover:text-white transition-colors"><ChevronLeft size={24} /></button>
             <div className="relative"><AbstractAvatar name={character.name} colorClass={character.color} seed={character.seed} size="md" initial={character.initial} /><div className="absolute inset-0 rounded-full animate-ping opacity-30" style={{ boxShadow: `0 0 20px 2px ${characterHex}` }} /></div>
-    <div><div className="font-black text-white uppercase text-sm tracking-tighter flex items-center gap-1.5">{character.name} <button onClick={() => setShowChatMenu(!showChatMenu)}><MoreVertical size={14} className="text-slate-700" /></button></div><div className="text-[8px] text-primary font-black uppercase tracking-widest">{loading ? 'Synthesizing...' : !navigator.onLine ? 'Neural Link Severed' : 'Direct Link'}</div></div>
+    <div><div className="font-black text-white uppercase text-sm tracking-tighter flex items-center gap-1.5">{character.name} <button onClick={() => setShowChatMenu(!showChatMenu)}><MoreVertical size={14} className="text-slate-700" /></button></div><div className="text-[8px] text-primary font-black uppercase tracking-widest flex items-center gap-1.5">{loading ? 'Synthesizing...' : !navigator.onLine ? 'Neural Link Severed' : 'Direct Link'} {socketStatus === 'open' && <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" title="Neural Socket Active" />}</div></div>
           </div>
         </div>
       </div>
