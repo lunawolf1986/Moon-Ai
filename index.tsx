@@ -620,7 +620,7 @@ const CreateView = ({ onCreateCharacter, onBack, initialMode, userProfile, onAdd
       const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
       const ai = new GoogleGenAI({ apiKey: apiKey as string });
       const response = await ai.models.generateContent({
-        model: "gemini-flash-latest",
+        model: "gemini-3-flash-preview",
         contents: "Generate 100 extremely diverse and unique character profiles for a chat app. Return them strictly as a JSON array of objects with these fields: name, tagline, subtitle, description, greeting, systemInstruction, color (Tailwind bg- color), maturityLevel (everyone, teen, mature, unrestricted), and tags (array). Ensure characters are high-quality and cinematic.",
         config: {
           responseMimeType: "application/json",
@@ -713,7 +713,7 @@ const CharacterEditor = ({ initialData, onSave, onCancel, mode, userProfile, per
       const ai = new GoogleGenAI({ apiKey: apiKey as string });
       const prompt = `Craft a cinematic, immersive opening greeting for a character named ${name}. Vibe: ${vibe}. Identity: ${tagline}. Context: This greeting is directed at a user persona named {{user}} (${activePersona?.bio || "unspecified identity"}). Directives: ${systemInstruction}. Requirements: - Use first-person dialogue. - Describe actions in *asterisks*. - Use {{user}} to refer to the person the character is talking to. - Return ONLY the greeting text with {{user}} included.`;
       const response = await ai.models.generateContent({ 
-        model: "gemini-flash-latest", 
+        model: "gemini-3-flash-preview", 
         contents: prompt, 
         config: { temperature: 1.0 } 
       });
@@ -961,10 +961,16 @@ ${isNeuralEngine ? "- FORMATTING: Every character turn MUST start with **[Charac
     const contents = formatHistoryForGemini(session.messages.slice(0, msgIndex));
     try {
       const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
+      console.log("Neural Link Status:", apiKey ? `Key detected (starts with ${apiKey.substring(0, 4)}...)` : "Key missing");
+      if (!apiKey) {
+        setAppToast?.("Neural Link Failed: API Key Missing.");
+        setLoading(false);
+        return;
+      }
       const ai = new GoogleGenAI({ apiKey: apiKey as string });
       const persona = currentPersona;
       const stream = await ai.models.generateContentStream({ 
-        model: "gemini-flash-latest", 
+        model: "gemini-3-flash-preview", 
         contents: contents,
         config: { 
           systemInstruction: getEnhancedSystemPrompt(character, persona), 
@@ -998,10 +1004,16 @@ ${isNeuralEngine ? "- FORMATTING: Every character turn MUST start with **[Charac
     setLoading(true);
     try {
       const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
+      console.log("Neural Link Status:", apiKey ? `Key detected (starts with ${apiKey.substring(0, 4)}...)` : "Key missing");
+      if (!apiKey) {
+        setAppToast?.("Neural Link Failed: API Key Missing. Check Vercel Environment Variables.");
+        setLoading(false);
+        return;
+      }
       const ai = new GoogleGenAI({ apiKey: apiKey as string });
       const persona = currentPersona;
       const stream = await ai.models.generateContentStream({ 
-        model: "gemini-flash-latest", 
+        model: "gemini-3-flash-preview", 
         contents: contents,
         config: { 
           systemInstruction: getEnhancedSystemPrompt(character, persona), 
