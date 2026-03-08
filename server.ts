@@ -2,18 +2,100 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
-import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { GoogleGenAI, HarmCategory, HarmBlockThreshold, Type } from "@google/genai";
 import path from "path";
 import { fileURLToPath } from "url";
+import fs from "fs/promises";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const DATA_FILE = path.join(__dirname, "user_data.json");
 
 async function startServer() {
   const app = express();
+  app.use(express.json({ limit: '50mb' }));
   const server = createServer(app);
   const wss = new WebSocketServer({ server });
   const PORT = 3000;
+
+  // Helper to get API Key
+  const getApiKey = () => process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
+
+  // --- Persistence Endpoints ---
+  app.get("/api/data", async (req, res) => {
+    try {
+      const data = await fs.readFile(DATA_FILE, "utf-8");
+      res.json(JSON.parse(data));
+    } catch (e) {
+      res.json({ characters: [], personas: [], chats: [], userProfile: null });
+    }
+  });
+
+  app.post("/api/data", async (req, res) => {
+    try {
+      await fs.writeFile(DATA_FILE, JSON.stringify(req.body, null, 2));
+      res.json({ success: true });
+    } catch (e) {
+      console.error("Save Error:", e);
+      res.status(500).json({ error: "Failed to save data" });
+    }
+  });
+
+  // --- AI Task Endpoints ---
+  app.post("/api/ai/harvest", async (req, res) => {
+    const apiKey = getApiKey();
+    if (!apiKey) return res.status(500).json({ error: "API Key Missing" });
+
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: "Generate 100 extremely diverse and unique character profiles for a chat app. Return them strictly as a JSON array of objects with these fields: name, tagline, subtitle, description, greeting, systemInstruction, color (Tailwind bg- color), maturityLevel (everyone, teen, mature, unrestricted), and tags (array). Ensure characters are high-quality and cinematic.",
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                tagline: { type: Type.STRING },
+                subtitle: { type: Type.STRING },
+                description: { type: Type.STRING },
+                greeting: { type: Type.STRING },
+                systemInstruction: { type: Type.STRING },
+                color: { type: Type.STRING },
+                maturityLevel: { type: Type.STRING },
+                tags: { type: Type.ARRAY, items: { type: Type.STRING } }
+              },
+              required: ["name", "tagline", "subtitle", "description", "greeting", "systemInstruction", "color", "maturityLevel", "tags"]
+            }
+          }
+        }
+      });
+      res.json(JSON.parse(response.text || "[]"));
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/ai/architect", async (req, res) => {
+    const apiKey = getApiKey();
+    if (!apiKey) return res.status(500).json({ error: "API Key Missing" });
+
+    const { prompt } = req.body;
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({ 
+        model: "gemini-3-flash-preview", 
+        contents: prompt, 
+        config: { temperature: 1.0 } 
+      });
+      res.json({ text: response.text });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
 
   // Store active chat sessions and their connected clients
   const rooms = new Map<string, Set<WebSocket>>();

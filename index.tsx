@@ -298,26 +298,13 @@ const CharacterCard: React.FC<{
 
 const App = () => {
   const [activeTab, setActiveTab] = useState<string>("for_you");
-  const [characters, setCharacters] = useState<Character[]>(() => {
-    const saved = localStorage.getItem('pf_characters');
-    return saved ? JSON.parse(saved) : MOCK_CHARACTERS;
-  });
-  const [userProfile, setUserProfile] = useState<UserProfile>(() => {
-    const saved = localStorage.getItem('pf_user_profile');
-    return saved ? JSON.parse(saved) : { name: "User Zero", handle: "@zero", avatarInitial: "0" };
-  });
-  const [personas, setPersonas] = useState<Persona[]>(() => {
-    const saved = localStorage.getItem('pf_personas');
-    return saved ? JSON.parse(saved) : DEFAULT_PERSONAS;
-  });
-  const [chats, setChats] = useState<ChatSession[]>(() => {
-    const saved = localStorage.getItem('pf_chats');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [characters, setCharacters] = useState<Character[]>(MOCK_CHARACTERS);
+  const [userProfile, setUserProfile] = useState<UserProfile>({ name: "User Zero", handle: "@zero", avatarInitial: "0" });
+  const [personas, setPersonas] = useState<Persona[]>(DEFAULT_PERSONAS);
+  const [chats, setChats] = useState<ChatSession[]>([]);
   const [appToast, setAppToast] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
 
   useEffect(() => {
@@ -355,15 +342,59 @@ const App = () => {
     }
     setDeferredPrompt(null);
   };
+
   const [activePersonaId, setActivePersonaId] = useState<string>("p_default");
   const [createViewMode, setCreateViewMode] = useState<"character" | "persona">("character");
   const [editingCharacterId, setEditingCharacterId] = useState<string | null>(null);
   const [editingPersonaId, setEditingPersonaId] = useState<string | null>(null);
 
-  useEffect(() => { localStorage.setItem('pf_characters', JSON.stringify(characters)); }, [characters]);
-  useEffect(() => { localStorage.setItem('pf_personas', JSON.stringify(personas)); }, [personas]);
-  useEffect(() => { localStorage.setItem('pf_chats', JSON.stringify(chats)); }, [chats]);
-  useEffect(() => { localStorage.setItem('pf_user_profile', JSON.stringify(userProfile)); }, [userProfile]);
+  // --- Server Sync ---
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const res = await fetch("/api/data");
+        const data = await res.json();
+        if (data.characters?.length) setCharacters(data.characters);
+        if (data.userProfile) setUserProfile(data.userProfile);
+        if (data.personas?.length) setPersonas(data.personas);
+        if (data.chats?.length) setChats(data.chats);
+      } catch (e) {
+        console.error("Failed to load server data, falling back to local", e);
+        const savedChars = localStorage.getItem('pf_characters');
+        if (savedChars) setCharacters(JSON.parse(savedChars));
+        const savedProfile = localStorage.getItem('pf_user_profile');
+        if (savedProfile) setUserProfile(JSON.parse(savedProfile));
+        const savedPersonas = localStorage.getItem('pf_personas');
+        if (savedPersonas) setPersonas(JSON.parse(savedPersonas));
+        const savedChats = localStorage.getItem('pf_chats');
+        if (savedChats) setChats(JSON.parse(savedChats));
+      }
+    };
+    loadData();
+  }, []);
+
+  useEffect(() => {
+    const saveData = async () => {
+      const data = { characters, userProfile, personas, chats };
+      localStorage.setItem('pf_characters', JSON.stringify(characters));
+      localStorage.setItem('pf_personas', JSON.stringify(personas));
+      localStorage.setItem('pf_chats', JSON.stringify(chats));
+      localStorage.setItem('pf_user_profile', JSON.stringify(userProfile));
+      
+      try {
+        await fetch("/api/data", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data)
+        });
+      } catch (e) {
+        console.error("Failed to sync with server", e);
+      }
+    };
+    
+    const timer = setTimeout(saveData, 1000);
+    return () => clearTimeout(timer);
+  }, [characters, userProfile, personas, chats]);
   useEffect(() => { if (appToast) { const timer = setTimeout(() => setAppToast(null), 2500); return () => clearTimeout(timer); } }, [appToast]);
   
   const startChat = (charId: string, forceNew: boolean = false) => {
@@ -618,34 +649,10 @@ const CreateView = ({ onCreateCharacter, onBack, initialMode, userProfile, onAdd
     vibrate(25);
     setIsGenerating(true);
     try {
-      const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
-      const ai = new GoogleGenAI({ apiKey: apiKey as string });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: "Generate 100 extremely diverse and unique character profiles for a chat app. Return them strictly as a JSON array of objects with these fields: name, tagline, subtitle, description, greeting, systemInstruction, color (Tailwind bg- color), maturityLevel (everyone, teen, mature, unrestricted), and tags (array). Ensure characters are high-quality and cinematic.",
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                tagline: { type: Type.STRING },
-                subtitle: { type: Type.STRING },
-                description: { type: Type.STRING },
-                greeting: { type: Type.STRING },
-                systemInstruction: { type: Type.STRING },
-                color: { type: Type.STRING },
-                maturityLevel: { type: Type.STRING },
-                tags: { type: Type.ARRAY, items: { type: Type.STRING } }
-              },
-              required: ["name", "tagline", "subtitle", "description", "greeting", "systemInstruction", "color", "maturityLevel", "tags"]
-            }
-          }
-        }
-      });
-      const data = JSON.parse(response.text || "[]");
+      const res = await fetch("/api/ai/harvest", { method: "POST" });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      
       const mapped = data.map((c: any) => ({
         id: generateId("gen_"),
         creator: "@AI_Neural",
@@ -656,7 +663,12 @@ const CreateView = ({ onCreateCharacter, onBack, initialMode, userProfile, onAdd
       }));
       onAddCharacters(mapped);
       onBack();
-    } catch (e) { console.error(e); alert("Neural Harvest interrupted. Try again."); } finally { setIsGenerating(false); }
+    } catch (e: any) { 
+      console.error(e); 
+      setAppToast?.(`Neural Harvest interrupted: ${e.message}`); 
+    } finally { 
+      setIsGenerating(false); 
+    }
   };
   return (
     <div className="flex flex-col h-full bg-[#121212] animate-in fade-in duration-300">
@@ -721,16 +733,23 @@ const CharacterEditor = ({ initialData, onSave, onCancel, mode, userProfile, per
     setIsGeneratingGreeting(true);
     try {
       const activePersona = personas.find(p => p.id === activePersonaId);
-      const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
-      const ai = new GoogleGenAI({ apiKey: apiKey as string });
       const prompt = `Craft a cinematic, immersive opening greeting for a character named ${name}. Vibe: ${vibe}. Identity: ${tagline}. Context: This greeting is directed at a user persona named {{user}} (${activePersona?.bio || "unspecified identity"}). Directives: ${systemInstruction}. Requirements: - Use first-person dialogue. - Describe actions in *asterisks*. - Use {{user}} to refer to the person the character is talking to. - Return ONLY the greeting text with {{user}} included.`;
-      const response = await ai.models.generateContent({ 
-        model: "gemini-3-flash-preview", 
-        contents: prompt, 
-        config: { temperature: 1.0 } 
+      
+      const res = await fetch("/api/ai/architect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt })
       });
-      setGreeting(response.text || "");
-    } catch (e) { console.error(e); } finally { setIsGeneratingGreeting(false); setShowGreetingTips(false); }
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setGreeting(data.text || "");
+    } catch (e: any) { 
+      console.error(e); 
+      setAppToast?.(`Architect failed: ${e.message}`);
+    } finally { 
+      setIsGeneratingGreeting(false); 
+      setShowGreetingTips(false); 
+    }
   };
   return (
     <div className="fixed inset-0 z-[100] bg-[#0a0a0a] flex flex-col animate-in slide-in-from-right duration-300 overflow-hidden">
