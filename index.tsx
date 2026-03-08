@@ -9,7 +9,7 @@ import {
   Library,
   Settings,
   Star,
-  Zap<
+  Zap,
   MoreHorizontal,
   Send,
   RefreshCw,
