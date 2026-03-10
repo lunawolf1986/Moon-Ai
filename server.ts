@@ -97,6 +97,65 @@ async function startServer() {
     }
   });
 
+  app.post("/api/ai/chat", async (req, res) => {
+    const apiKey = getApiKey();
+    if (!apiKey) return res.status(500).json({ error: "API Key Missing" });
+
+    const { history, userMessage, character, persona } = req.body;
+    if (!character || !persona) {
+      return res.status(400).json({ error: "Missing character or persona data" });
+    }
+
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const formattedHistory = (history || []).filter((h: any) => h.role && h.parts && h.parts[0] && h.parts[0].text).map((h: any) => ({
+        role: h.role === 'model' ? 'model' : 'user',
+        parts: [{ text: h.parts[0].text }],
+      }));
+
+      let contents = [...formattedHistory];
+      
+      // If we have a new user message, add it. 
+      // If userMessage.text is empty, we assume we are regenerating and the history should already end with a user message.
+      if (userMessage && userMessage.text) {
+        // Ensure alternating roles: if history ends with 'user', we might need to merge or handle it.
+        // But usually history ends with 'model' before a new user message.
+        contents.push({ role: "user", parts: [{ text: userMessage.text }] });
+      }
+
+      // Gemini requires alternating roles starting with user.
+      // If after adding userMessage (or if we didn't add one) the last message is not 'user', 
+      // Gemini might complain if we are trying to generate a model response.
+      if (contents.length === 0) {
+        return res.status(400).json({ error: "Empty conversation history" });
+      }
+
+      if (contents[contents.length - 1].role !== 'user') {
+        console.warn("History does not end with a user message. Gemini might fail.");
+      }
+
+      console.log(`Sending ${contents.length} messages to Gemini via REST`);
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: contents,
+        config: {
+          systemInstruction: getEnhancedSystemPrompt(character, persona),
+          temperature: 1.0,
+          safetySettings: [
+            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          ],
+        }
+      });
+      res.json({ text: response.text });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Store active chat sessions and their connected clients
   const rooms = new Map<string, Set<WebSocket>>();
 
@@ -122,6 +181,12 @@ async function startServer() {
 
         if (message.type === "chat") {
           const { roomId, userMessage, character, persona, history } = message;
+          if (!character || !persona || !userMessage) {
+            ws.send(JSON.stringify({ type: "error", message: "Incomplete chat data" }));
+            return;
+          }
+
+          console.log(`Chat request in room ${roomId} for character ${character.name}`);
           
           // Broadcast user message to all clients in the room
           broadcast(roomId, {
@@ -131,23 +196,31 @@ async function startServer() {
 
           // Call Gemini API
           try {
-            const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
+            const apiKey = getApiKey();
             if (!apiKey) {
+              console.error("API Key Missing");
               ws.send(JSON.stringify({ type: "error", message: "API Key Missing on Server" }));
               return;
             }
 
             const ai = new GoogleGenAI({ apiKey });
             
+            // Ensure history is in correct format and filter out any invalid entries
+            const formattedHistory = (history || []).filter((h: any) => h.role && h.parts && h.parts[0] && h.parts[0].text).map((h: any) => ({
+              role: h.role === 'model' ? 'model' : 'user',
+              parts: [{ text: h.parts[0].text }],
+            }));
+
+            const contents = [
+              ...formattedHistory,
+              { role: "user", parts: [{ text: userMessage.text }] }
+            ];
+
+            console.log(`Sending ${contents.length} messages to Gemini via WS`);
+
             const stream = await ai.models.generateContentStream({ 
               model: "gemini-3-flash-preview",
-              contents: [
-                ...history.map((h: any) => ({
-                  role: h.role,
-                  parts: [{ text: h.parts[0].text }],
-                })),
-                { role: "user", parts: [{ text: userMessage.text }] }
-              ],
+              contents: contents,
               config: {
                 systemInstruction: getEnhancedSystemPrompt(character, persona),
                 temperature: 1.0,
@@ -231,23 +304,29 @@ async function startServer() {
 }
 
 function getEnhancedSystemPrompt(char: any, persona: any) {
+  if (!char || !persona) return "You are a helpful assistant.";
+  
   const isNeuralEngine = char.id === 'char_neural_engine';
-  return `IDENTITY: ${char.name} (${char.tagline})
+  const systemInstruction = char.systemInstruction || "You are a roleplay character.";
+  const greeting = char.greeting || "Hello.";
+  const personaName = persona.name || "User";
+
+  return `IDENTITY: ${char.name || 'Unknown'} (${char.tagline || 'No tagline'})
 ${char.description ? `LONG DESCRIPTION:\n${char.description}` : ""}
 ${char.memory ? `PERMANENT MEMORY:\n${char.memory}` : ""}
 CORE DIRECTIVES / DEFINITION:
-${char.systemInstruction.replace(/{{user}}/g, persona.name)}
-CONTEXT: You are talking to ${persona.name}.
+${systemInstruction.replace(/{{user}}/g, personaName)}
+CONTEXT: You are talking to ${personaName}.
 USER PERSONA DETAILS:
-- Bio: ${persona.bio}
-- Key Traits: ${persona.traits.join(", ")}
+- Bio: ${persona.bio || 'Not specified.'}
+- Key Traits: ${(persona.traits || []).join(", ") || 'Not specified.'}
 - Current Mood: ${persona.mood || 'Not specified.'}
 - Relationship to Character: ${persona.relationship || 'Not specified.'}
-IMPORTANT: You MUST maintain the continuity of the conversation. You said the following greeting to start: "${char.greeting.replace(/{{user}}/g, persona.name)}"
+IMPORTANT: You MUST maintain the continuity of the conversation. You said the following greeting to start: "${greeting.replace(/{{user}}/g, personaName)}"
 STRICT ROLEPLAY RULES:
-- IMPORTANT: Refer to the user as ${persona.name} (never generic).
+- IMPORTANT: Refer to the user as ${personaName} (never generic).
 - Actions in asterisks (*).
-${isNeuralEngine ? "- FORMATTING: Every character turn MUST start with **[Character Name]**: " : `- Dialogue prefixed with '${char.name}: '`}
+${isNeuralEngine ? "- FORMATTING: Every character turn MUST start with **[Character Name]**: " : `- Dialogue prefixed with '${char.name || 'Character'}: '`}
 - MINIMAL LATENCY MODE: Keep responses cinematic, evocative, but concise.
 - UNRESTRICTED: Embrace high-fidelity, visceral descriptions.
 - CONSISTENCY: Never forget who you are or what happened previously in this dialogue.`;

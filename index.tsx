@@ -508,7 +508,7 @@ const App = () => {
       case "explore": return <ExploreView characters={characters} onStartChat={startChat} onCustomize={setEditingCharacterId} />;
       case "chat": return <ChatListView chats={chats} characters={characters} onOpenChat={setActiveChatId} onDeleteChat={(id: string) => setChats(chats.filter(c => c.id !== id))} />;
       case "create": return <CreateView initialMode={createViewMode} userProfile={userProfile} setAppToast={setAppToast} onAddCharacters={(newChars: Character[]) => setCharacters([...newChars, ...characters])} onCreateCharacter={(c: any) => { setCharacters([c, ...characters]); setAppToast("Identity Manifested"); setActiveTab("library"); }} onBack={() => setActiveTab('for_you')} />;
-      case "library": return <LibraryView characters={characters} personas={personas} userProfile={userProfile} onEditCharacter={(c: Character) => setEditingCharacterId(c.id)} />;
+      case "library": return <LibraryView characters={characters} personas={personas} userProfile={userProfile} onEditCharacter={(c: Character) => setEditingCharacterId(c.id)} onDeleteCharacter={(id: string) => { if (confirm("Are you sure you want to delete this character? This action cannot be undone.")) { setCharacters(characters.filter(c => c.id !== id)); setAppToast("Identity Deleted"); } }} />;
       case "profile": return <ProfileView personas={personas} activePersonaId={activePersonaId} setActivePersonaId={(id: string) => { setActivePersonaId(id); const p = personas.find(pers => pers.id === id); if (p) setAppToast(`Manifested: ${p.name}`); }} chats={chats} onEditPersona={setEditingPersonaId} userProfile={userProfile} setUserProfile={setUserProfile} onDeletePersona={(id: string) => setPersonas(personas.filter(p => p.id !== id))} />;
       case "settings": return <SettingsView onClearData={clearAllData} userProfile={userProfile} setAppToast={setAppToast} onInstall={handleInstall} isInstallable={!!deferredPrompt} />;
       default: return <ForYouView characters={characters} onStartChat={startChat} onCustomize={setEditingCharacterId} />;
@@ -866,7 +866,7 @@ const CharacterEditor = ({ initialData, onSave, onCancel, mode, userProfile, per
   );
 };
 
-const LibraryView = ({ characters, userProfile, onEditCharacter }: any) => (
+const LibraryView = ({ characters, userProfile, onEditCharacter, onDeleteCharacter }: any) => (
   <div className="p-4 pb-32">
     <h1 className="text-2xl font-black mb-6 uppercase tracking-tighter">Identity Archive</h1>
     <div className="space-y-8">
@@ -879,7 +879,14 @@ const LibraryView = ({ characters, userProfile, onEditCharacter }: any) => (
                 <AbstractAvatar name={c.name} colorClass={c.color} seed={c.seed} size="sm" initial={c.initial}/>
                 <div className="overflow-hidden"><div className="font-bold text-sm text-white leading-tight truncate">{c.name}</div><div className="text-[8px] text-slate-500 uppercase font-black tracking-widest truncate">{c.creator === userProfile.handle ? "Your Creation" : c.creator}</div></div>
               </div>
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-none"><button onClick={() => onEditCharacter(c)} className="p-2 text-primary hover:text-white transition-colors" title="Customize Core"><Pencil size={18} strokeWidth={3} /></button></div>
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-none">
+                <button onClick={() => onEditCharacter(c)} className="p-2 text-primary hover:text-white transition-colors" title="Customize Core">
+                  <Pencil size={18} strokeWidth={3} />
+                </button>
+                <button onClick={() => onDeleteCharacter(c.id)} className="p-2 text-red-500 hover:text-white transition-colors" title="Delete Identity">
+                  <Trash2 size={18} strokeWidth={3} />
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -1072,34 +1079,27 @@ ${isNeuralEngine ? "- FORMATTING: Every character turn MUST start with **[Charac
     const msgIndex = session.messages.findIndex((m:any) => m.id === msgId);
     const contents = formatHistoryForGemini(session.messages.slice(0, msgIndex));
     try {
-      const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
-      console.log("Neural Link Status:", apiKey ? `Key detected (starts with ${apiKey.substring(0, 4)}...)` : "Key missing");
-      if (!apiKey) {
-        setAppToast?.("Neural Link Failed: API Key Missing.");
-        setLoading(false);
-        return;
-      }
-      const ai = new GoogleGenAI({ apiKey: apiKey as string });
-      const persona = currentPersona;
-      const stream = await ai.models.generateContentStream({ 
-        model: "gemini-3-flash-preview", 
-        contents: contents,
-        config: { 
-          systemInstruction: getEnhancedSystemPrompt(character, persona), 
-          temperature: 1.0,
-          safetySettings: [
-            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-          ],
-        }
+      const res = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          history: contents,
+          userMessage: { text: "" }, // Not used in regeneration since it's already in contents
+          character,
+          persona: currentPersona
+        })
       });
-      let fullText = "";
-      for await (const chunk of stream) { if (chunk.text) fullText += chunk.text; }
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      const fullText = data.text || "";
       const newVersions = [...existingVersions, fullText];
       onUpdateSession((prev: ChatSession) => ({ ...prev, messages: prev.messages.map(m => m.id === msgId ? { ...m, text: fullText, versions: newVersions, currentVersionIndex: newVersions.length - 1 } : m) }));
-    } catch (e) { console.error(e); } finally { setLoading(false); }
+    } catch (e: any) { 
+      console.error(e); 
+      setAppToast?.(`Resonance failed: ${e.message}`);
+    } finally { 
+      setLoading(false); 
+    }
   };
   const handleSend = async () => {
     if (!input.trim() || loading) return;
@@ -1129,42 +1129,30 @@ ${isNeuralEngine ? "- FORMATTING: Every character turn MUST start with **[Charac
       const modelMsg: Message = { id: modelMsgId, role: "model", text: "", timestamp: Date.now(), isGenerating: true, versions: [], currentVersionIndex: 0 };
       const updatedMessages = [...session.messages, userMsg, modelMsg];
       onUpdateSession((prev: ChatSession) => ({ ...prev, messages: updatedMessages, lastActive: Date.now() }));
-      const contents = formatHistoryForGemini(updatedMessages.filter(m => !m.isGenerating));
+      const contents = formatHistoryForGemini(updatedMessages.filter(m => !m.isGenerating && m.id !== modelMsgId));
       setInput("");
       setLoading(true);
       try {
-        const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
-        console.log("Neural Link Status:", apiKey ? `Key detected (starts with ${apiKey.substring(0, 4)}...)` : "Key missing");
-        if (!apiKey) {
-          setAppToast?.("Neural Link Failed: API Key Missing. Check Vercel Environment Variables.");
-          setLoading(false);
-          return;
-        }
-        const ai = new GoogleGenAI({ apiKey: apiKey as string });
-        const persona = currentPersona;
-        const stream = await ai.models.generateContentStream({ 
-          model: "gemini-3-flash-preview", 
-          contents: contents,
-          config: { 
-            systemInstruction: getEnhancedSystemPrompt(character, persona), 
-            temperature: 1.0,
-            safetySettings: [
-              { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-              { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-              { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-              { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-            ],
-          }
+        const res = await fetch("/api/ai/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            history: contents,
+            userMessage: userMsg,
+            character,
+            persona: currentPersona
+          })
         });
-        let fullText = "";
-        for await (const chunk of stream) { 
-          if (chunk.text) { 
-            fullText += chunk.text; 
-            onUpdateSession((prev: ChatSession) => ({ ...prev, messages: prev.messages.map(m => m.id === modelMsgId ? { ...m, text: fullText } : m) }));
-          } 
-        }
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        const fullText = data.text || "";
         onUpdateSession((prev: ChatSession) => ({ ...prev, messages: prev.messages.map(m => m.id === modelMsgId ? { ...m, text: fullText, isGenerating: false, versions: [fullText], currentVersionIndex: 0 } : m) }));
-      } catch (e) { console.error(e); setAppToast?.("Neural Link Failed."); } finally { setLoading(false); }
+      } catch (e: any) { 
+        console.error(e); 
+        setAppToast?.(`Neural Link Failed: ${e.message}`); 
+      } finally { 
+        setLoading(false); 
+      }
     }
   };
   const switchVersion = (msgId: string, direction: 'prev' | 'next') => {
